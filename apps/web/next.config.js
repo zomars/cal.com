@@ -76,6 +76,7 @@ module.exports = () => plugins.reduce((acc, next) => next(acc), {
     return config;
   },
   async rewrites() {
+    console.log("web rewrites");
     return [
       {
         source: "/:user/avatar.png",
