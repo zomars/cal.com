@@ -89,6 +89,7 @@ jobs:
   required:
     needs: [e2e]
     if: always()
+    runs-on: ubuntu-latest
     steps:
       - name: fail if conditional jobs failed
         if: ${{ contains(needs.*.result, 'failure') }}
