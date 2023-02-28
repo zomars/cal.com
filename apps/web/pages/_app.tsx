@@ -33,6 +33,8 @@ function MyApp(props: AppProps) {
     pageStatus = "500";
   }
 
+  console.log("Console log to test hashFile changes");
+
   // On client side don't let nonce creep into DOM
   // It also avoids hydration warning that says that Client has the nonce value but server has "" because browser removes nonce attributes before DOM is built
   // See https://github.com/kentcdodds/nonce-hydration-issues
