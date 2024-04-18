@@ -47,7 +47,7 @@ runs:
       uses: buildjet/cache@v3
       with:
         path: "**/node_modules/"
-        key: ${{ runner.os }}-yarn-nm-cache-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+        key: yarn-nm-cache-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
 
     # Invalidated on yarn.lock changes
     - name: Restore yarn install state
@@ -55,7 +55,7 @@ runs:
       uses: buildjet/cache@v3
       with:
         path: .yarn/ci-cache/
-        key: ${{ runner.os }}-yarn-install-state-cache-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
+        key: yarn-install-state-cache-${{ hashFiles('yarn.lock', '.yarnrc.yml') }}
 
     - name: Install dependencies
       shell: bash
@@ -65,7 +65,7 @@ runs:
       env:
         # CI optimizations. Overrides yarnrc.yml options (or their defaults) in the CI action.
         YARN_ENABLE_IMMUTABLE_INSTALLS: "false" # So it doesn't try to remove our private submodule deps
-        YARN_ENABLE_GLOBAL_CACHE: "false" # Use local cache folder to keep downloaded archives
+        # YARN_ENABLE_GLOBAL_CACHE: "false" # Use local cache folder to keep downloaded archives
         YARN_INSTALL_STATE_PATH: .yarn/ci-cache/install-state.gz # Very small speedup when lock does not change
         YARN_NM_MODE: "hardlinks-local" # Reduce node_modules size
         # Other environment variables
