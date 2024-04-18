@@ -1,9 +1,10 @@
 import { useId } from "@radix-ui/react-id";
 import * as Label from "@radix-ui/react-label";
 import * as PrimitiveSwitch from "@radix-ui/react-switch";
+import type { ReactNode } from "react";
 import React from "react";
 
-import classNames from "@calcom/lib/classNames";
+import cx from "@calcom/lib/classNames";
 
 import { Tooltip } from "../../tooltip";
 
@@ -15,45 +16,60 @@ const Wrapper = ({ children, tooltip }: { tooltip?: string; children: React.Reac
 };
 const Switch = (
   props: React.ComponentProps<typeof PrimitiveSwitch.Root> & {
-    label?: string;
-    thumbProps?: {
-      className?: string;
-    };
+    label?: string | ReactNode;
     fitToHeight?: boolean;
+    disabled?: boolean;
     tooltip?: string;
+    small?: boolean;
+    labelOnLeading?: boolean;
+    classNames?: {
+      container?: string;
+      thumb?: string;
+    };
+    LockedIcon?: React.ReactNode;
   }
 ) => {
-  const { label, fitToHeight, ...primitiveProps } = props;
+  const { label, fitToHeight, classNames, small, labelOnLeading, LockedIcon, ...primitiveProps } = props;
   const id = useId();
-
+  const isChecked = props.checked || props.defaultChecked;
   return (
     <Wrapper tooltip={props.tooltip}>
-      <div className={classNames("flex h-auto w-auto flex-row items-center", fitToHeight && "h-fit")}>
+      <div
+        className={cx(
+          "flex h-auto w-auto flex-row items-center",
+          fitToHeight && "h-fit",
+          labelOnLeading && "flex-row-reverse",
+          classNames?.container
+        )}>
+        {LockedIcon && <div className="mr-2">{LockedIcon}</div>}
         <PrimitiveSwitch.Root
-          className={classNames(
-            props.checked ? "bg-gray-900" : "bg-gray-200",
-            primitiveProps.disabled ? "cursor-not-allowed" : "hover:bg-gray-300",
-            "focus:ring-brand-800 h-5 w-[34px] rounded-full shadow-none",
+          className={cx(
+            isChecked ? "bg-brand-default dark:bg-brand-emphasis" : "bg-emphasis",
+            primitiveProps.disabled && "cursor-not-allowed",
+            small ? "h-4 w-[27px]" : "h-5 w-[34px]",
+            "focus:ring-brand-default rounded-full shadow-none focus:border-neutral-300 focus:outline-none focus:ring-2 focus:ring-neutral-800 focus:ring-offset-1",
             props.className
           )}
           {...primitiveProps}>
           <PrimitiveSwitch.Thumb
             id={id}
-            // Since we dont support global dark mode - we have to style dark mode components specifically on the instance for now
-            // TODO: Remove once we support global dark mode
-            className={classNames(
-              "block h-[14px] w-[14px] rounded-full bg-white transition will-change-transform ltr:translate-x-[4px] rtl:-translate-x-[4px] ltr:[&[data-state='checked']]:translate-x-[17px] rtl:[&[data-state='checked']]:-translate-x-[17px]",
-              props.checked && "shadow-inner",
-              props.thumbProps?.className
+            className={cx(
+              small
+                ? "h-[10px] w-[10px] ltr:translate-x-[2px] rtl:-translate-x-[2px] ltr:[&[data-state='checked']]:translate-x-[13px] rtl:[&[data-state='checked']]:-translate-x-[13px]"
+                : "h-[14px] w-[14px] ltr:translate-x-[4px] rtl:-translate-x-[4px] ltr:[&[data-state='checked']]:translate-x-[17px] rtl:[&[data-state='checked']]:-translate-x-[17px]",
+              "block rounded-full transition will-change-transform",
+              isChecked ? "bg-brand-accent shadow-inner" : "bg-default",
+              classNames?.thumb
             )}
           />
         </PrimitiveSwitch.Root>
         {label && (
           <Label.Root
             htmlFor={id}
-            className={classNames(
-              "align-text-top text-sm font-medium text-gray-900 ltr:ml-2 rtl:mr-2 dark:text-white",
-              primitiveProps.disabled ? "cursor-not-allowed opacity-25" : "cursor-pointer "
+            className={cx(
+              "text-emphasis ms-2 align-text-top text-sm font-medium",
+              primitiveProps.disabled ? "cursor-not-allowed opacity-25" : "cursor-pointer",
+              labelOnLeading && "flex-1"
             )}>
             {label}
           </Label.Root>

@@ -1,13 +1,20 @@
 import { faker } from "@faker-js/faker";
+import { describe, expect, it, vi } from "vitest";
 
-import { getLocation, getPublicVideoCallUrl, getVideoCallPassword, getVideoCallUrl } from "../CalEventParser";
+import {
+  getLocation,
+  getPublicVideoCallUrl,
+  getVideoCallPassword,
+  getVideoCallUrlFromCalEvent,
+} from "../CalEventParser";
 import { buildCalendarEvent, buildVideoCallData } from "./builder";
 
-jest.mock("@calcom/lib/constants", () => ({
+vi.mock("@calcom/lib/constants", () => ({
   WEBAPP_URL: "http://localhost:3000",
+  APP_NAME: "Cal.com",
 }));
 
-jest.mock("short-uuid", () => ({
+vi.mock("short-uuid", () => ({
   __esModule: true,
   default: () => ({ fromUUID: () => "FAKE_UUID" }),
 }));
@@ -20,7 +27,7 @@ describe("getLocation", () => {
       }),
     });
 
-    expect(getLocation(calEvent)).toEqual(getVideoCallUrl(calEvent));
+    expect(getLocation(calEvent)).toEqual(getVideoCallUrlFromCalEvent(calEvent));
   });
   it("should return an integration provider name from event", () => {
     const provideName = "Cal.com";
@@ -49,7 +56,7 @@ describe("getVideoCallUrl", () => {
       }),
     });
 
-    expect(getVideoCallUrl(calEvent)).toEqual(getPublicVideoCallUrl(calEvent));
+    expect(getVideoCallUrlFromCalEvent(calEvent)).toEqual(getPublicVideoCallUrl(calEvent));
   });
 });
 

@@ -1,13 +1,29 @@
 import type React from "react";
 import type { z } from "zod";
 
-import type { _EventTypeModel } from "@calcom/prisma/zod";
+import type { EventTypeFormMetadataSchema } from "@calcom/prisma/zod-utils";
 import type { RouterOutputs } from "@calcom/trpc/react";
 import type { ButtonProps } from "@calcom/ui";
 
 export type IntegrationOAuthCallbackState = {
   returnTo: string;
+  onErrorReturnTo: string;
+  fromApp: boolean;
   installGoogleVideo?: boolean;
+  teamId?: number;
+};
+
+export type CredentialOwner = {
+  name: string | null;
+  avatar?: string | null;
+  teamId?: number;
+  credentialId?: number;
+  readOnly?: boolean;
+};
+
+export type EventTypeAppCardApp = RouterOutputs["viewer"]["integrations"]["items"][number] & {
+  credentialOwner?: CredentialOwner;
+  credentialIds?: number[];
 };
 
 type AppScript = { attrs?: Record<string, string> } & { src?: string; content?: string };
@@ -21,6 +37,7 @@ export interface InstallAppButtonProps {
     renderProps: ButtonProps & {
       /** Tells that the default render component should be used */
       useDefaultComponent?: boolean;
+      isPending?: boolean;
     }
   ) => JSX.Element;
   onChanged?: () => unknown;
@@ -29,11 +46,14 @@ export interface InstallAppButtonProps {
 export type EventTypeAppCardComponentProps = {
   // Limit what data should be accessible to apps
   eventType: Pick<
-    z.infer<typeof _EventTypeModel>,
-    "id" | "title" | "description" | "teamId" | "length" | "recurringEvent"
+    z.infer<typeof EventTypeModel>,
+    "id" | "title" | "description" | "teamId" | "length" | "recurringEvent" | "seatsPerTimeSlot" | "team"
   > & {
     URL: string;
   };
-  app: RouterOutputs["viewer"]["apps"][number];
+  app: EventTypeAppCardApp;
+  disabled?: boolean;
+  LockedIcon?: JSX.Element | false;
+  eventTypeFormMetadata?: z.infer<typeof EventTypeFormMetadataSchema>;
 };
 export type EventTypeAppCardComponent = React.FC<EventTypeAppCardComponentProps>;

@@ -1,15 +1,13 @@
-import { MembershipRole } from "@prisma/client";
 import classNames from "classnames";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 
-import { WEBAPP_URL } from "@calcom/lib/constants";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
+import { MembershipRole } from "@calcom/prisma/enums";
 import type { RouterOutputs } from "@calcom/trpc/react";
 import { trpc } from "@calcom/trpc/react";
 import useMeQuery from "@calcom/trpc/react/hooks/useMeQuery";
 import {
-  Avatar,
   Button,
   ButtonGroup,
   ConfirmationDialogContent,
@@ -25,16 +23,17 @@ import {
   DropdownMenuTrigger,
   showToast,
   Tooltip,
+  UserAvatar,
 } from "@calcom/ui";
-import { FiExternalLink, FiMoreHorizontal, FiEdit2, FiLock, FiTrash } from "@calcom/ui/components/icon";
 
 import MemberChangeRoleModal from "./MemberChangeRoleModal";
+import TeamAvailabilityModal from "./TeamAvailabilityModal";
 import TeamPill, { TeamRole } from "./TeamPill";
-import TeamAvailabilityModal from "./v2/TeamAvailabilityModal";
 
 interface Props {
   team: RouterOutputs["viewer"]["teams"]["get"];
   member: RouterOutputs["viewer"]["teams"]["get"]["members"][number];
+  isOrgAdminOrOwner: boolean | undefined;
 }
 
 /** TODO: Migrate the one in apps/web to tRPC package */
@@ -44,10 +43,14 @@ const useCurrentUserId = () => {
   return user?.id;
 };
 
-export default function MemberListItem(props: Props) {
-  const { t } = useLocale();
+const checkIsOrg = (team: Props["team"]) => {
+  return team.isOrganization;
+};
 
-  const utils = trpc.useContext();
+export default function MemberListItem(props: Props) {
+  const { t, i18n } = useLocale();
+
+  const utils = trpc.useUtils();
   const [showChangeMemberRoleModal, setShowChangeMemberRoleModal] = useState(false);
   const [showTeamAvailabilityModal, setShowTeamAvailabilityModal] = useState(false);
   const [showImpersonateModal, setShowImpersonateModal] = useState(false);
@@ -56,10 +59,22 @@ export default function MemberListItem(props: Props) {
   const removeMemberMutation = trpc.viewer.teams.removeMember.useMutation({
     async onSuccess() {
       await utils.viewer.teams.get.invalidate();
+      await utils.viewer.eventTypes.invalidate();
+      await utils.viewer.organizations.listMembers.invalidate();
+      await utils.viewer.organizations.getMembers.invalidate();
       showToast(t("success"), "success");
     },
     async onError(err) {
       showToast(err.message, "error");
+    },
+  });
+
+  const resendInvitationMutation = trpc.viewer.teams.resendInvitation.useMutation({
+    onSuccess: () => {
+      showToast(t("invitation_resent"), "success");
+    },
+    onError: (error) => {
+      showToast(error.message, "error");
     },
   });
 
@@ -79,51 +94,97 @@ export default function MemberListItem(props: Props) {
     })();
 
   const removeMember = () =>
-    removeMemberMutation.mutate({ teamId: props.team?.id, memberId: props.member.id });
+    removeMemberMutation.mutate({
+      teamId: props.team?.id,
+      memberId: props.member.id,
+      isOrg: checkIsOrg(props.team),
+    });
 
   const editMode =
-    (props.team.membership.role === MembershipRole.OWNER &&
+    (props.team.membership?.role === MembershipRole.OWNER &&
       (props.member.role !== MembershipRole.OWNER ||
         ownersInTeam() > 1 ||
         props.member.id !== currentUserId)) ||
-    (props.team.membership.role === MembershipRole.ADMIN && props.member.role !== MembershipRole.OWNER);
+    (props.team.membership?.role === MembershipRole.ADMIN && props.member.role !== MembershipRole.OWNER) ||
+    props.isOrgAdminOrOwner;
   const impersonationMode =
     editMode &&
     !props.member.disableImpersonation &&
     props.member.accepted &&
     process.env.NEXT_PUBLIC_TEAM_IMPERSONATION === "true";
+  const resendInvitation = editMode && !props.member.accepted;
+
+  const bookerUrl = props.member.bookerUrl;
+  const bookerUrlWithoutProtocol = bookerUrl.replace(/^https?:\/\//, "");
+  const bookingLink = !!props.member.username && `${bookerUrlWithoutProtocol}/${props.member.username}`;
+  const isAdmin = props.team && ["ADMIN", "OWNER"].includes(props.team.membership?.role);
+  const appList = props.member.connectedApps?.map(({ logo, name, externalId }) => {
+    return logo ? (
+      externalId ? (
+        <div className="ltr:mr-2 rtl:ml-2 ">
+          <Tooltip content={externalId}>
+            <img className="h-5 w-5" src={logo} alt={`${name} logo`} />
+          </Tooltip>
+        </div>
+      ) : (
+        <div className="ltr:mr-2 rtl:ml-2">
+          <img className="h-5 w-5" src={logo} alt={`${name} logo`} />
+        </div>
+      )
+    ) : null;
+  });
 
   return (
-    <li className="divide-y px-5">
+    <li className="divide-subtle divide-y px-5">
       <div className="my-4 flex justify-between">
-        <div className="flex w-full flex-col justify-between sm:flex-row">
+        <div className="flex w-full flex-col justify-between truncate sm:flex-row">
           <div className="flex">
-            <Avatar
+            <UserAvatar
+              noOrganizationIndicator
               size="sm"
-              imageSrc={WEBAPP_URL + "/" + props.member.username + "/avatar.png"}
-              alt={name || ""}
+              user={props.member}
               className="h-10 w-10 rounded-full"
             />
-
-            <div className="inline-block ltr:ml-3 rtl:mr-3">
-              <div className="mb-1 flex">
-                <span className="mr-1 text-sm font-bold leading-4">{name}</span>
-
-                {!props.member.accepted && <TeamPill color="orange" text={t("pending")} />}
-                {props.member.role && <TeamRole role={props.member.role} />}
+            <div className="ms-3 inline-block">
+              <div className="mb-1 flex" data-testid={`member-${props.member.username}`}>
+                <span data-testid="member-name" className="text-default mr-2 text-sm font-bold leading-4">
+                  {name}
+                </span>
+                {!props.member.accepted && (
+                  <TeamPill data-testid="member-pending" color="orange" text={t("pending")} />
+                )}
+                {isAdmin && props.member.accepted && appList}
+                {props.member.role && <TeamRole data-testid="member-role" role={props.member.role} />}
               </div>
-              <span
-                className="block text-sm text-gray-600"
-                data-testid="member-email"
-                data-email={props.member.email}>
-                {props.member.email}
-              </span>
+              <div className="text-default flex items-center">
+                <span
+                  className=" block text-sm"
+                  data-testid={
+                    props.member.accepted
+                      ? "member-email"
+                      : `email-${props.member.email.replace("@", "")}-pending`
+                  }
+                  data-email={props.member.email}>
+                  {props.member.email}
+                </span>
+                {bookingLink && (
+                  <>
+                    <span className="text-default mx-2 block">•</span>
+                    <a
+                      target="_blank"
+                      href={`${bookerUrl}/${props.member.username}`}
+                      className="text-default block text-sm">
+                      {bookingLink}
+                    </a>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
-        {props.team.membership.accepted && (
+        {props.team.membership?.accepted && (
           <div className="flex items-center justify-center">
-            <ButtonGroup combined containerProps={{ className: "border-gray-300 hidden md:flex" }}>
+            <ButtonGroup combined containerProps={{ className: "border-default hidden md:flex" }}>
               {/* TODO: bring availability back. right now its ugly and broken
                <Tooltip
                 content={
@@ -136,19 +197,22 @@ export default function MemberListItem(props: Props) {
                   onClick={() => (props.member.accepted ? setShowTeamAvailabilityModal(true) : null)}
                   color="secondary"
                   variant="icon"
-                  StartIcon={FiClock}
+                  StartIcon="clock"
                 />
               </Tooltip> */}
-              <Tooltip content={t("view_public_page")}>
-                <Button
-                  target="_blank"
-                  href={"/" + props.member.username}
-                  color="secondary"
-                  className={classNames(!editMode ? "rounded-r-md" : "")}
-                  variant="icon"
-                  StartIcon={FiExternalLink}
-                />
-              </Tooltip>
+              {!!props.member.accepted && (
+                <Tooltip content={t("view_public_page")}>
+                  <Button
+                    target="_blank"
+                    href={`${bookerUrl}/${props.member.username}`}
+                    color="secondary"
+                    className={classNames(!editMode ? "rounded-r-md" : "")}
+                    variant="icon"
+                    StartIcon="external-link"
+                    disabled={!props.member.accepted}
+                  />
+                </Tooltip>
+              )}
               {editMode && (
                 <Dropdown>
                   <DropdownMenuTrigger asChild>
@@ -156,7 +220,7 @@ export default function MemberListItem(props: Props) {
                       className="radix-state-open:rounded-r-md"
                       color="secondary"
                       variant="icon"
-                      StartIcon={FiMoreHorizontal}
+                      StartIcon="ellipsis"
                     />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
@@ -164,7 +228,7 @@ export default function MemberListItem(props: Props) {
                       <DropdownItem
                         type="button"
                         onClick={() => setShowChangeMemberRoleModal(true)}
-                        StartIcon={FiEdit2}>
+                        StartIcon="pencil">
                         {t("edit")}
                       </DropdownItem>
                     </DropdownMenuItem>
@@ -174,20 +238,36 @@ export default function MemberListItem(props: Props) {
                           <DropdownItem
                             type="button"
                             onClick={() => setShowImpersonateModal(true)}
-                            StartIcon={FiLock}>
+                            StartIcon="lock">
                             {t("impersonate")}
                           </DropdownItem>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                       </>
                     )}
+                    {resendInvitation && (
+                      <DropdownMenuItem>
+                        <DropdownItem
+                          type="button"
+                          onClick={() => {
+                            resendInvitationMutation.mutate({
+                              teamId: props.team?.id,
+                              email: props.member.email,
+                              language: i18n.language,
+                            });
+                          }}
+                          StartIcon="send">
+                          {t("resend_invitation")}
+                        </DropdownItem>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem>
                       <DropdownItem
                         type="button"
                         onClick={() => setShowDeleteModal(true)}
                         color="destructive"
-                        StartIcon={FiTrash}>
-                        {t("delete")}
+                        StartIcon="user-x">
+                        {t("remove")}
                       </DropdownItem>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -197,11 +277,16 @@ export default function MemberListItem(props: Props) {
             <div className="flex md:hidden">
               <Dropdown>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="icon" color="minimal" StartIcon={FiMoreHorizontal} />
+                  <Button type="button" variant="icon" color="minimal" StartIcon="ellipsis" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuItem className="outline-none">
-                    <DropdownItem type="button" StartIcon={FiExternalLink}>
+                    <DropdownItem
+                      disabled={!props.member.accepted}
+                      href={!props.member.accepted ? undefined : `/${props.member.username}`}
+                      target="_blank"
+                      type="button"
+                      StartIcon="external-link">
                       {t("view_public_page")}
                     </DropdownItem>
                   </DropdownMenuItem>
@@ -211,7 +296,7 @@ export default function MemberListItem(props: Props) {
                         <DropdownItem
                           type="button"
                           onClick={() => setShowChangeMemberRoleModal(true)}
-                          StartIcon={FiEdit2}>
+                          StartIcon="pencil">
                           {t("edit")}
                         </DropdownItem>
                       </DropdownMenuItem>
@@ -220,8 +305,8 @@ export default function MemberListItem(props: Props) {
                           type="button"
                           color="destructive"
                           onClick={() => setShowDeleteModal(true)}
-                          StartIcon={FiTrash}>
-                          {t("delete")}
+                          StartIcon="user-x">
+                          {t("remove")}
                         </DropdownItem>
                       </DropdownMenuItem>
                     </>
@@ -234,7 +319,7 @@ export default function MemberListItem(props: Props) {
       </div>
 
       {editMode && (
-        <Dialog open={showDeleteModal} onOpenChange={() => setShowDeleteModal(false)}>
+        <Dialog open={showDeleteModal} onOpenChange={() => setShowDeleteModal((prev) => !prev)}>
           <ConfirmationDialogContent
             variety="danger"
             title={t("remove_member")}
@@ -252,12 +337,12 @@ export default function MemberListItem(props: Props) {
               onSubmit={async (e) => {
                 e.preventDefault();
                 await signIn("impersonation-auth", {
-                  username: props.member.username || props.member.email,
+                  username: props.member.email,
                   teamId: props.team.id,
                 });
                 setShowImpersonateModal(false);
               }}>
-              <DialogFooter>
+              <DialogFooter showDivider className="mt-8">
                 <DialogClose color="secondary">{t("cancel")}</DialogClose>
                 <Button color="primary" type="submit">
                   {t("impersonate")}

@@ -2,8 +2,7 @@ import type { InputHTMLAttributes } from "react";
 import React, { forwardRef } from "react";
 
 import classNames from "@calcom/lib/classNames";
-
-import InfoBadge from "@components/ui/InfoBadge";
+import { InfoBadge } from "@calcom/ui";
 
 type Props = InputHTMLAttributes<HTMLInputElement> & {
   label?: React.ReactNode;
@@ -22,7 +21,7 @@ const CheckboxField = forwardRef<HTMLInputElement, Props>(
             {React.createElement(
               descriptionAsLabel ? "div" : "label",
               {
-                className: "flex text-sm font-medium text-gray-700",
+                className: "flex text-sm font-medium text-default",
                 ...(!descriptionAsLabel
                   ? {
                       htmlFor: rest.id,
@@ -40,7 +39,7 @@ const CheckboxField = forwardRef<HTMLInputElement, Props>(
               {
                 className: classNames(
                   "relative flex items-start",
-                  descriptionAsLabel ? "text-gray-700" : "text-gray-900"
+                  descriptionAsLabel ? "text-default" : "text-emphasis"
                 ),
               },
               <>
@@ -49,10 +48,10 @@ const CheckboxField = forwardRef<HTMLInputElement, Props>(
                     {...rest}
                     ref={ref}
                     type="checkbox"
-                    className="text-primary-600 focus:ring-primary-500 h-4 w-4 rounded border-gray-300"
+                    className="text-emphasis focus:ring-emphasis dark:text-muted border-default bg-default h-4 w-4 rounded"
                   />
                 </div>
-                <span className="text-sm ltr:ml-3 rtl:mr-3">{description}</span>
+                <span className="ms-2 text-sm">{description}</span>
               </>
             )}
             {informationIconText && <InfoBadge content={informationIconText} />}

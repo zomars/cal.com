@@ -39,3 +39,13 @@ export const seoConfig: {
     },
   },
 } as const;
+
+/**
+ * This function builds a canonical URL from a given host and path omitting the query params. Note: on homepage it omits the trailing slash
+ * @param origin The protocol + host, e.g. `https://cal.com` or `https://cal.dev`
+ * @param path NextJS' useRouter().asPath
+ * @returns
+ */
+export const buildCanonical = ({ origin, path }: { origin: Location["origin"]; path: string | null }) => {
+  return `${origin}${path === "/" ? "" : path}`.split("?")[0];
+};

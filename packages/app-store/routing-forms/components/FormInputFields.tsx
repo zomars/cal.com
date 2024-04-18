@@ -1,8 +1,10 @@
 import type { App_RoutingForms_Form } from "@prisma/client";
 import type { Dispatch, SetStateAction } from "react";
 
+import getFieldIdentifier from "../lib/getFieldIdentifier";
 import { getQueryBuilderConfig } from "../lib/getQueryBuilderConfig";
 import isRouterLinkedField from "../lib/isRouterLinkedField";
+import transformResponse from "../lib/transformResponse";
 import type { SerializableForm, Response } from "../types/types";
 
 type Props = {
@@ -40,37 +42,32 @@ export default function FormInputFields(props: Props) {
         return (
           <div key={field.id} className="mb-4 block flex-col sm:flex ">
             <div className="min-w-48 mb-2 flex-grow">
-              <label
-                id="slug-label"
-                htmlFor="slug"
-                className="flex text-sm font-medium text-gray-700 dark:text-white">
+              <label id="slug-label" htmlFor="slug" className="text-default flex text-sm font-medium">
                 {field.label}
               </label>
             </div>
-            <div className="flex rounded-sm">
-              <Component
-                value={response[field.id]?.value}
-                placeholder={field.placeholder ?? ""}
-                // required property isn't accepted by query-builder types
-                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                /* @ts-ignore */
-                required={!!field.required}
-                listValues={options}
-                data-testid="form-field"
-                setValue={(value) => {
-                  setResponse((response) => {
-                    response = response || {};
-                    return {
-                      ...response,
-                      [field.id]: {
-                        label: field.label,
-                        value,
-                      },
-                    };
-                  });
-                }}
-              />
-            </div>
+            <Component
+              value={response[field.id]?.value}
+              placeholder={field.placeholder ?? ""}
+              // required property isn't accepted by query-builder types
+              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+              /* @ts-ignore */
+              required={!!field.required}
+              listValues={options}
+              data-testid={`form-field-${getFieldIdentifier(field)}`}
+              setValue={(value: number | string | string[]) => {
+                setResponse((response) => {
+                  response = response || {};
+                  return {
+                    ...response,
+                    [field.id]: {
+                      label: field.label,
+                      value: transformResponse({ field, value }),
+                    },
+                  };
+                });
+              }}
+            />
           </div>
         );
       })}

@@ -1,28 +1,58 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import { PrismaClient as PrismaClientWithoutExtension } from "@prisma/client";
+import { withAccelerate } from "@prisma/extension-accelerate";
 
-import { bookingReferenceMiddleware, eventTypeDescriptionParseAndSanitizeMiddleware } from "./middleware";
-
-declare global {
-  // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
-}
+import { bookingIdempotencyKeyExtension } from "./extensions/booking-idempotency-key";
+import { excludePendingPaymentsExtension } from "./extensions/exclude-pending-payment-teams";
+import { bookingReferenceMiddleware } from "./middleware";
 
 const prismaOptions: Prisma.PrismaClientOptions = {};
 
+const globalForPrisma = global as unknown as {
+  prismaWithoutClientExtensions: PrismaClientWithoutExtension;
+  prismaWithClientExtensions: PrismaClientWithExtensions;
+};
+
 if (!!process.env.NEXT_PUBLIC_DEBUG) prismaOptions.log = ["query", "error", "warn"];
 
-export const prisma = globalThis.prisma || new PrismaClient(prismaOptions);
+// Prevents flooding with idle connections
+const prismaWithoutClientExtensions =
+  globalForPrisma.prismaWithoutClientExtensions || new PrismaClientWithoutExtension(prismaOptions);
 
-export const customPrisma = (options: Prisma.PrismaClientOptions) =>
-  new PrismaClient({ ...prismaOptions, ...options });
+export const customPrisma = (options?: Prisma.PrismaClientOptions) =>
+  new PrismaClientWithoutExtension({ ...prismaOptions, ...options })
+    .$extends(excludePendingPaymentsExtension())
+    .$extends(bookingIdempotencyKeyExtension())
+    .$extends(withAccelerate());
+
+// If any changed on middleware server restart is required
+// TODO: Migrate it to $extends
+bookingReferenceMiddleware(prismaWithoutClientExtensions);
+
+// FIXME: Due to some reason, there are types failing in certain places due to the $extends. Fix it and then enable it
+// Specifically we get errors like `Type 'string | Date | null | undefined' is not assignable to type 'Exact<string | Date | null | undefined, string | Date | null | undefined>'`
+const prismaWithClientExtensions = prismaWithoutClientExtensions
+  .$extends(excludePendingPaymentsExtension())
+  .$extends(bookingIdempotencyKeyExtension())
+  .$extends(withAccelerate());
+
+export const prisma = globalForPrisma.prismaWithClientExtensions || prismaWithClientExtensions;
+
+// This prisma instance is meant to be used only for READ operations.
+// If self hosting, feel free to leave INSIGHTS_DATABASE_URL as empty and `readonlyPrisma` will default to `prisma`.
+export const readonlyPrisma = process.env.INSIGHTS_DATABASE_URL
+  ? customPrisma({
+      datasources: { db: { url: process.env.INSIGHTS_DATABASE_URL } },
+    })
+  : prisma;
 
 if (process.env.NODE_ENV !== "production") {
-  globalThis.prisma = prisma;
+  globalForPrisma.prismaWithoutClientExtensions = prismaWithoutClientExtensions;
+  globalForPrisma.prismaWithClientExtensions = prisma;
 }
-// If any changed on middleware server restart is required
-bookingReferenceMiddleware(prisma);
-eventTypeDescriptionParseAndSanitizeMiddleware(prisma);
 
+type PrismaClientWithExtensions = typeof prismaWithClientExtensions;
+export type PrismaClient = PrismaClientWithExtensions;
 export default prisma;
 
 export * from "./selects";

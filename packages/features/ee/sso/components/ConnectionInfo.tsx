@@ -4,14 +4,14 @@ import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { trpc } from "@calcom/trpc/react";
 import {
   Button,
-  showToast,
-  Tooltip,
   ConfirmationDialogContent,
   Dialog,
   DialogTrigger,
+  Icon,
   Label,
+  showToast,
+  Tooltip,
 } from "@calcom/ui";
-import { FiClipboard } from "@calcom/ui/components/icon";
 
 export default function ConnectionInfo({
   teamId,
@@ -21,7 +21,7 @@ export default function ConnectionInfo({
   connection: SSOConnection;
 }) {
   const { t } = useLocale();
-  const utils = trpc.useContext();
+  const utils = trpc.useUtils();
 
   const connectionType = connection.type.toUpperCase();
 
@@ -51,13 +51,17 @@ export default function ConnectionInfo({
       ) : (
         <OIDCInfo callbackUrl={connection.callbackUrl} />
       )}
-      <hr className="my-6 border-neutral-200" />
+      <hr className="border-subtle my-6" />
       <div className="flex flex-col space-y-3">
         <Label>{t("danger_zone")}</Label>
         <Dialog>
           <div>
             <DialogTrigger asChild>
-              <Button color="destructive">{t("delete_sso_configuration", { connectionType })}</Button>
+              <Button
+                color="destructive"
+                data-testid={`delete-${connectionType === "OIDC" ? "oidc" : "saml"}-sso-connection`}>
+                {t("delete_sso_configuration", { connectionType })}
+              </Button>
             </DialogTrigger>
           </div>
           <ConfirmationDialogContent
@@ -88,7 +92,7 @@ const SAMLInfo = ({ acsUrl, entityId }: { acsUrl: string | null; entityId: strin
           <Label>ACS URL</Label>
         </div>
         <div className="flex">
-          <code className="flex w-full items-center truncate rounded rounded-r-none bg-gray-100 pl-2 font-mono text-gray-800">
+          <code className="bg-subtle text-default flex w-full items-center truncate rounded rounded-r-none pl-2 font-mono">
             {acsUrl}
           </code>
           <Tooltip side="top" content={t("copy_to_clipboard")}>
@@ -99,7 +103,7 @@ const SAMLInfo = ({ acsUrl, entityId }: { acsUrl: string | null; entityId: strin
               }}
               type="button"
               className="rounded-l-none py-[19px] text-base ">
-              <FiClipboard className="h-5 w-5 text-gray-100 ltr:mr-2 rtl:ml-2" />
+              <Icon name="clipboard" className="text-muted h-5 w-5 ltr:mr-2 rtl:ml-2" />
               {t("copy")}
             </Button>
           </Tooltip>
@@ -110,7 +114,7 @@ const SAMLInfo = ({ acsUrl, entityId }: { acsUrl: string | null; entityId: strin
           <Label>Entity ID</Label>
         </div>
         <div className="flex">
-          <code className="flex w-full items-center truncate rounded rounded-r-none bg-gray-100 pl-2 font-mono text-gray-800">
+          <code className="bg-subtle text-default flex w-full items-center truncate rounded rounded-r-none pl-2 font-mono">
             {entityId}
           </code>
           <Tooltip side="top" content={t("copy_to_clipboard")}>
@@ -121,7 +125,7 @@ const SAMLInfo = ({ acsUrl, entityId }: { acsUrl: string | null; entityId: strin
               }}
               type="button"
               className="rounded-l-none py-[19px] text-base ">
-              <FiClipboard className="h-5 w-5 text-gray-100 ltr:mr-2 rtl:ml-2" />
+              <Icon name="clipboard" className="text-muted h-5 w-5 ltr:mr-2 rtl:ml-2" />
               {t("copy")}
             </Button>
           </Tooltip>
@@ -146,7 +150,7 @@ const OIDCInfo = ({ callbackUrl }: { callbackUrl: string | null }) => {
           <Label>Callback URL</Label>
         </div>
         <div className="flex">
-          <code className="flex w-full items-center truncate rounded rounded-r-none bg-gray-100 pl-2 font-mono text-gray-800">
+          <code className="bg-subtle text-default flex w-full items-center truncate rounded rounded-r-none pl-2 font-mono">
             {callbackUrl}
           </code>
           <Tooltip side="top" content={t("copy_to_clipboard")}>
@@ -157,7 +161,7 @@ const OIDCInfo = ({ callbackUrl }: { callbackUrl: string | null }) => {
               }}
               type="button"
               className="rounded-l-none py-[19px] text-base ">
-              <FiClipboard className="h-5 w-5 text-gray-100 ltr:mr-2 rtl:ml-2" />
+              <Icon name="clipboard" className="text-muted h-5 w-5 ltr:mr-2 rtl:ml-2" />
               {t("copy")}
             </Button>
           </Tooltip>

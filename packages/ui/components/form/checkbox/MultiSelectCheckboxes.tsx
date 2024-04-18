@@ -14,13 +14,12 @@ export type Option = {
   label: string;
 };
 
-const InputOption: React.FC<OptionProps<any, boolean, GroupBase<any>>> = ({
+const InputOption: React.FC<OptionProps<unknown, boolean, GroupBase<unknown>>> = ({
   isDisabled,
   isFocused,
   isSelected,
   children,
   innerProps,
-  className,
   ...rest
 }) => {
   const props = {
@@ -29,12 +28,6 @@ const InputOption: React.FC<OptionProps<any, boolean, GroupBase<any>>> = ({
 
   return (
     <components.Option
-      className={classNames(
-        className,
-        "dark:bg-darkgray-100 !flex !cursor-pointer !py-3 text-[inherit]",
-        isFocused && "dark:!bg-darkgray-200 !bg-gray-100",
-        isSelected && "dark:!bg-darkgray-300 !bg-neutral-900"
-      )}
       {...rest}
       isDisabled={isDisabled}
       isFocused={isFocused}
@@ -42,7 +35,7 @@ const InputOption: React.FC<OptionProps<any, boolean, GroupBase<any>>> = ({
       innerProps={props}>
       <input
         type="checkbox"
-        className="text-primary-600 focus:ring-primary-500 h-4 w-4 rounded border-gray-300 ltr:mr-2 rtl:ml-2"
+        className="text-emphasis focus:ring-emphasis dark:text-muted border-default h-4 w-4 rounded ltr:mr-2 rtl:ml-2"
         checked={isSelected}
         readOnly
       />
@@ -58,7 +51,7 @@ type MultiSelectionCheckboxesProps = {
   setValue: (s: Option[]) => unknown;
 };
 
-const MultiValue = ({ index, getValue }: { index: number; getValue: any }) => {
+const MultiValue = ({ index, getValue }: { index: number; getValue: () => { length: number } }) => {
   const { t } = useLocale();
 
   return <>{!index && <div>{t("nr_event_type", { count: getValue().length })}</div>}</>;
@@ -71,18 +64,22 @@ export default function MultiSelectCheckboxes({
   setSelected,
   setValue,
   className,
+  isDisabled,
 }: Omit<Props, "options"> & MultiSelectionCheckboxesProps) {
   const additonalComponents = { MultiValue };
 
   return (
     <Select
       value={selected}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onChange={(s: any) => {
         setSelected(s);
         setValue(s);
       }}
+      variant="checkbox"
       options={options}
       isMulti
+      isDisabled={isDisabled}
       className={classNames(className ? className : "w-64 text-sm")}
       isSearchable={false}
       closeMenuOnSelect={false}

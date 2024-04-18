@@ -1,12 +1,16 @@
-import type { Prisma, DestinationCalendar, SelectedCalendar, BookingSeat } from "@prisma/client";
+import type { BookingSeat, DestinationCalendar, Prisma, SelectedCalendar } from "@prisma/client";
 import type { Dayjs } from "dayjs";
 import type { calendar_v3 } from "googleapis";
 import type { Time } from "ical.js";
 import type { TFunction } from "next-i18next";
+import type z from "zod";
 
+import type { bookingResponse } from "@calcom/features/bookings/lib/getBookingResponsesSchema";
 import type { Calendar } from "@calcom/features/calendars/weeklyview";
 import type { TimeFormat } from "@calcom/lib/timeFormat";
+import type { SchedulingType } from "@calcom/prisma/enums";
 import type { Frequency } from "@calcom/prisma/zod-utils";
+import type { CredentialPayload } from "@calcom/types/Credential";
 
 import type { Ensure } from "./utils";
 
@@ -16,6 +20,9 @@ type PaymentInfo = {
   link?: string | null;
   reason?: string | null;
   id?: string | null;
+  paymentOption?: string | null;
+  amount?: number;
+  currency?: string;
 };
 
 export type Person = {
@@ -32,6 +39,7 @@ export type Person = {
 };
 
 export type TeamMember = {
+  id?: number;
   name: string;
   email: string;
   timeZone: string;
@@ -47,6 +55,7 @@ export type EventBusyDate = {
 export type EventBusyDetails = EventBusyDate & {
   title?: string;
   source?: string | null;
+  userId?: number | null;
 };
 
 export type CalendarServiceType = typeof Calendar;
@@ -55,10 +64,12 @@ export type AdditionalInfo = Record<string, unknown> & { calWarnings?: string[] 
 export type NewCalendarEventType = {
   uid: string;
   id: string;
+  thirdPartyRecurringEventId?: string | null;
   type: string;
   password: string;
   url: string;
   additionalInfo: AdditionalInfo;
+  iCalUID?: string | null;
 };
 
 export type CalendarEventType = {
@@ -113,12 +124,9 @@ export interface RecurringEvent {
   tzid?: string | undefined;
 }
 
-export interface IntervalLimit {
-  PER_DAY?: number | undefined;
-  PER_WEEK?: number | undefined;
-  PER_MONTH?: number | undefined;
-  PER_YEAR?: number | undefined;
-}
+export type IntervalLimitUnit = "day" | "week" | "month" | "year";
+
+export type IntervalLimit = Partial<Record<`PER_${Uppercase<IntervalLimitUnit>}`, number | undefined>>;
 
 export type AppsStatus = {
   appName: string;
@@ -129,8 +137,24 @@ export type AppsStatus = {
   warnings?: string[];
 };
 
+export type CalEventResponses = Record<
+  string,
+  {
+    label: string;
+    value: z.infer<typeof bookingResponse>;
+    isHidden?: boolean;
+  }
+>;
+
+export interface ExistingRecurringEvent {
+  recurringEventId: string;
+}
+
 // If modifying this interface, probably should update builders/calendarEvent files
 export interface CalendarEvent {
+  // Instead of sending this per event.
+  // TODO: Links sent in email should be validated and automatically redirected to org domain or regular app. It would be a much cleaner way. Maybe use existing /api/link endpoint
+  bookerUrl?: string;
   type: string;
   title: string;
   startTime: string;
@@ -143,15 +167,19 @@ export interface CalendarEvent {
   team?: {
     name: string;
     members: TeamMember[];
+    id: number;
   };
   location?: string | null;
+  conferenceCredentialId?: number;
   conferenceData?: ConferenceData;
   additionalInformation?: AdditionalInformation;
   uid?: string | null;
+  existingRecurringEvent?: ExistingRecurringEvent | null;
+  bookingId?: number;
   videoCallData?: VideoCallData;
   paymentInfo?: PaymentInfo | null;
   requiresConfirmation?: boolean | null;
-  destinationCalendar?: DestinationCalendar | null;
+  destinationCalendar?: DestinationCalendar[] | null;
   cancellationReason?: string | null;
   rejectionReason?: string | null;
   hideCalendarNotes?: boolean;
@@ -160,26 +188,22 @@ export interface CalendarEvent {
   eventTypeId?: number | null;
   appsStatus?: AppsStatus[];
   seatsShowAttendees?: boolean | null;
+  seatsShowAvailabilityCount?: boolean | null;
   attendeeSeatId?: string;
   seatsPerTimeSlot?: number | null;
+  schedulingType?: SchedulingType | null;
+  iCalUID?: string | null;
+  iCalSequence?: number | null;
 
   // It has responses to all the fields(system + user)
-  responses?: Record<
-    string,
-    {
-      value: string | string[];
-      label: string;
-    }
-  > | null;
+  responses?: CalEventResponses | null;
 
   // It just has responses to only the user fields. It allows to easily iterate over to show only user fields
-  userFieldsResponses?: Record<
-    string,
-    {
-      value: string | string[];
-      label: string;
-    }
-  > | null;
+  userFieldsResponses?: CalEventResponses | null;
+  platformClientId?: string | null;
+  platformRescheduleUrl?: string | null;
+  platformCancelUrl?: string | null;
+  platformBookingUrl?: string | null;
 }
 
 export interface EntryPoint {
@@ -206,12 +230,12 @@ export interface IntegrationCalendar extends Ensure<Partial<SelectedCalendar>, "
   // For displaying the connected email address
   email?: string;
   primaryEmail?: string;
-  credentialId?: number;
+  credentialId?: number | null;
   integrationTitle?: string;
 }
 
 export interface Calendar {
-  createEvent(event: CalendarEvent): Promise<NewCalendarEventType>;
+  createEvent(event: CalendarEvent, credentialId: number): Promise<NewCalendarEventType>;
 
   updateEvent(
     uid: string,
@@ -229,3 +253,10 @@ export interface Calendar {
 
   listCalendars(event?: CalendarEvent): Promise<IntegrationCalendar[]>;
 }
+
+/**
+ * @see [How to inference class type that implements an interface](https://stackoverflow.com/a/64765554/6297100)
+ */
+type Class<I, Args extends any[] = any[]> = new (...args: Args) => I;
+
+export type CalendarClass = Class<Calendar, [CredentialPayload]>;

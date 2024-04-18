@@ -1,37 +1,50 @@
-import fs from "fs";
-import matter from "gray-matter";
+"use client";
+
+import { Prisma } from "@prisma/client";
 import MarkdownIt from "markdown-it";
-import type { GetStaticPaths, GetStaticPropsContext } from "next";
-import path from "path";
-import { z } from "zod";
+import type { GetStaticPaths } from "next";
+import Link from "next/link";
 
-import { getAppWithMetadata } from "@calcom/app-store/_appRegistry";
+import { IS_PRODUCTION } from "@calcom/lib/constants";
+import { useLocale } from "@calcom/lib/hooks/useLocale";
 import prisma from "@calcom/prisma";
+import { showToast } from "@calcom/ui";
 
+import { getStaticProps } from "@lib/apps/[slug]/getStaticProps";
+import useRouterQuery from "@lib/hooks/useRouterQuery";
 import type { inferSSRProps } from "@lib/types/inferSSRProps";
 
+import PageWrapper from "@components/PageWrapper";
 import App from "@components/apps/App";
 
 const md = new MarkdownIt("default", { html: true, breaks: true });
 
-const sourceSchema = z.object({
-  content: z.string(),
-  data: z.object({
-    description: z.string().optional(),
-    items: z
-      .array(
-        z.union([
-          z.string(),
-          z.object({
-            iframe: z.object({ src: z.string() }),
-          }),
-        ])
-      )
-      .optional(),
-  }),
-});
+function SingleAppPage(props: inferSSRProps<typeof getStaticProps>) {
+  const { error, setQuery: setError } = useRouterQuery("error");
+  const { t } = useLocale();
+  if (error === "account_already_linked") {
+    showToast(t(error), "error", { id: error });
+    setError(undefined);
+  }
+  // If it's not production environment, it would be a better idea to inform that the App is disabled.
+  if (props.isAppDisabled) {
+    if (!IS_PRODUCTION) {
+      // TODO: Improve disabled App UI. This is just a placeholder.
+      return (
+        <div className="p-2">
+          This App seems to be disabled. If you are an admin, you can enable this app from{" "}
+          <Link href="/settings/admin/apps" className="cursor-pointer text-blue-500 underline">
+            here
+          </Link>
+        </div>
+      );
+    }
 
-function SingleAppPage({ data, source }: inferSSRProps<typeof getStaticProps>) {
+    // Disabled App should give 404 any ways in production.
+    return null;
+  }
+
+  const { source, data } = props;
   return (
     <App
       name={data.name}
@@ -50,10 +63,12 @@ function SingleAppPage({ data, source }: inferSSRProps<typeof getStaticProps>) {
       website={data.url}
       email={data.email}
       licenseRequired={data.licenseRequired}
-      isProOnly={data.isProOnly}
+      teamsPlanRequired={data.teamsPlanRequired}
       descriptionItems={source.data?.items as string[] | undefined}
       isTemplate={data.isTemplate}
       dependencies={data.dependencies}
+      concurrentMeetings={data.concurrentMeetings}
+      paid={data.paid}
       //   tos="https://zoom.us/terms"
       //   privacy="https://zoom.us/privacy"
       body={
@@ -66,8 +81,18 @@ function SingleAppPage({ data, source }: inferSSRProps<typeof getStaticProps>) {
 }
 
 export const getStaticPaths: GetStaticPaths<{ slug: string }> = async () => {
-  const appStore = await prisma.app.findMany({ select: { slug: true } });
-  const paths = appStore.map(({ slug }) => ({ params: { slug } }));
+  let paths: { params: { slug: string } }[] = [];
+
+  try {
+    const appStore = await prisma.app.findMany({ select: { slug: true } });
+    paths = appStore.map(({ slug }) => ({ params: { slug } }));
+  } catch (e: unknown) {
+    if (e instanceof Prisma.PrismaClientInitializationError) {
+      // Database is not available at build time, but that's ok – we fall back to resolving paths on demand
+    } else {
+      throw e;
+    }
+  }
 
   return {
     paths,
@@ -75,51 +100,8 @@ export const getStaticPaths: GetStaticPaths<{ slug: string }> = async () => {
   };
 };
 
-export const getStaticProps = async (ctx: GetStaticPropsContext) => {
-  if (typeof ctx.params?.slug !== "string") return { notFound: true };
+export { getStaticProps };
 
-  const app = await prisma.app.findUnique({
-    where: { slug: ctx.params.slug.toLowerCase() },
-  });
-
-  if (!app) return { notFound: true };
-
-  const singleApp = await getAppWithMetadata(app);
-
-  if (!singleApp) return { notFound: true };
-
-  const isTemplate = singleApp.isTemplate;
-  const appDirname = path.join(isTemplate ? "templates" : "", app.dirName);
-  const README_PATH = path.join(process.cwd(), "..", "..", `packages/app-store/${appDirname}/DESCRIPTION.md`);
-  const postFilePath = path.join(README_PATH);
-  let source = "";
-
-  try {
-    source = fs.readFileSync(postFilePath).toString();
-    source = source.replace(/{DESCRIPTION}/g, singleApp.description);
-  } catch (error) {
-    /* If the app doesn't have a README we fallback to the package description */
-    console.log(`No DESCRIPTION.md provided for: ${appDirname}`);
-    source = singleApp.description;
-  }
-
-  const result = matter(source);
-  const { content, data } = sourceSchema.parse({ content: result.content, data: result.data });
-  if (data.items) {
-    data.items = data.items.map((item) => {
-      if (typeof item === "string" && !item.includes("/api/app-store")) {
-        // Make relative paths absolute
-        return `/api/app-store/${appDirname}/${item}`;
-      }
-      return item;
-    });
-  }
-  return {
-    props: {
-      source: { content, data },
-      data: singleApp,
-    },
-  };
-};
+SingleAppPage.PageWrapper = PageWrapper;
 
 export default SingleAppPage;

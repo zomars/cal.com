@@ -6,16 +6,17 @@ import { components } from "react-select";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import type { DestinationCalendar } from "@calcom/prisma/client";
 import { trpc } from "@calcom/trpc/react";
-import { Select } from "@calcom/ui";
+import { Badge, Icon, Select } from "@calcom/ui";
 
 interface Props {
   onChange: (value: { externalId: string; integration: string }) => void;
-  isLoading?: boolean;
+  isPending?: boolean;
   hidePlaceholder?: boolean;
   /** The external Id of the connected calendar */
   destinationCalendar?: DestinationCalendar | null;
   value: string | undefined;
   maxWidth?: number;
+  hideAdvancedText?: boolean;
 }
 
 interface Option {
@@ -28,7 +29,7 @@ const SingleValueComponent = ({ ...props }: SingleValueProps<Option>) => {
   const { label, subtitle } = props.data;
   return (
     <components.SingleValue {...props} className="flex space-x-1">
-      <p>{label}</p> <p className=" text-gray-500">{subtitle}</p>
+      <p>{label}</p> <p className=" text-subtle">{subtitle}</p>
     </components.SingleValue>
   );
 };
@@ -37,18 +38,21 @@ const OptionComponent = ({ ...props }: OptionProps<Option>) => {
   const { label } = props.data;
   return (
     <components.Option {...props}>
-      <span>{label}</span>
+      <div className="flex">
+        <span className="mr-auto">{label}</span>
+        {props.isSelected && <Icon name="check" className="ml-2 h-4 w-4" />}
+      </div>
     </components.Option>
   );
 };
 
 const DestinationCalendarSelector = ({
   onChange,
-  isLoading,
+  isPending,
   value,
   hidePlaceholder,
+  hideAdvancedText,
   maxWidth,
-  destinationCalendar,
 }: Props): JSX.Element | null => {
   const { t } = useLocale();
   const query = trpc.viewer.connectedCalendars.useQuery();
@@ -66,7 +70,7 @@ const DestinationCalendarSelector = ({
         width: "100%",
         display: "flex",
         ":before": {
-          content: `'${t("select_destination_calendar")}:'`,
+          content: `'${t("create_events_on")}:'`,
           display: "block",
           marginRight: 8,
         },
@@ -121,17 +125,19 @@ const DestinationCalendarSelector = ({
   const queryDestinationCalendar = query.data.destinationCalendar;
 
   return (
-    <div className="relative" title={`${t("select_destination_calendar")}: ${selectedOption?.label || ""}`}>
+    <div
+      className="relative table w-full table-fixed"
+      title={`${t("create_events_on")}: ${selectedOption?.label || ""}`}>
       <Select
         name="primarySelectedCalendar"
         placeholder={
           !hidePlaceholder ? (
-            `${t("select_destination_calendar")}`
+            `${t("create_events_on")}`
           ) : (
-            <span className="min-w-0 overflow-hidden truncate whitespace-nowrap">
-              {t("default_calendar_selected")}{" "}
+            <span className="text-default min-w-0 overflow-hidden truncate whitespace-nowrap">
+              <Badge variant="blue">Default</Badge>{" "}
               {queryDestinationCalendar.name &&
-                `| ${queryDestinationCalendar.name} (${queryDestinationCalendar?.integrationTitle} - ${queryDestinationCalendar.primaryEmail})`}
+                `${queryDestinationCalendar.name} (${queryDestinationCalendar?.integrationTitle} - ${queryDestinationCalendar.primaryEmail})`}
             </span>
           )
         }
@@ -151,7 +157,7 @@ const DestinationCalendarSelector = ({
         }}
         isSearchable={false}
         className={classNames(
-          "mt-1 mb-2 block w-full min-w-0 flex-1 rounded-none rounded-r-sm border-gray-300 text-sm"
+          "border-default my-2 block w-full min-w-0 flex-1 rounded-none rounded-r-sm text-sm"
         )}
         onChange={(newValue) => {
           setSelectedOption(newValue);
@@ -167,11 +173,14 @@ const DestinationCalendarSelector = ({
             externalId,
           });
         }}
-        isLoading={isLoading}
+        isLoading={isPending}
         value={selectedOption}
         components={{ SingleValue: SingleValueComponent, Option: OptionComponent }}
         isMulti={false}
       />
+      {hideAdvancedText ? null : (
+        <p className="text-sm leading-tight">{t("you_can_override_calendar_in_advanced_tab")}</p>
+      )}
     </div>
   );
 };

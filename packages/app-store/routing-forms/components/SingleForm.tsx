@@ -1,19 +1,16 @@
-import type { App_RoutingForms_Form } from "@prisma/client";
+import type { App_RoutingForms_Form, Team } from "@prisma/client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useFormContext } from "react-hook-form";
 
+import LicenseRequired from "@calcom/features/ee/common/components/LicenseRequired";
+import AddMembersWithSwitch from "@calcom/features/eventtypes/components/AddMembersWithSwitch";
 import { ShellMain } from "@calcom/features/shell/Shell";
 import useApp from "@calcom/lib/hooks/useApp";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { trpc } from "@calcom/trpc/react";
-import type {
-  AppGetServerSidePropsContext,
-  AppPrisma,
-  AppSsrInit,
-  AppUser,
-} from "@calcom/types/AppGetServerSideProps";
+import type { inferSSRProps } from "@calcom/types/inferSSRProps";
 import {
   Alert,
   Badge,
@@ -34,19 +31,24 @@ import {
   Tooltip,
   VerticalDivider,
 } from "@calcom/ui";
-import { FiExternalLink, FiLink, FiDownload, FiCode, FiTrash } from "@calcom/ui/components/icon";
 
+import { getAbsoluteEventTypeRedirectUrl } from "../getEventTypeRedirectUrl";
 import { RoutingPages } from "../lib/RoutingPages";
-import { getSerializableForm } from "../lib/getSerializableForm";
+import { isFallbackRoute } from "../lib/isFallbackRoute";
 import { processRoute } from "../lib/processRoute";
 import type { Response, Route, SerializableForm } from "../types/types";
 import { FormAction, FormActionsDropdown, FormActionsProvider } from "./FormActions";
 import FormInputFields from "./FormInputFields";
 import RoutingNavBar from "./RoutingNavBar";
+import { getServerSidePropsForSingleFormView } from "./getServerSidePropsSingleForm";
 
 type RoutingForm = SerializableForm<App_RoutingForms_Form>;
 
 export type RoutingFormWithResponseCount = RoutingForm & {
+  team: {
+    slug: Team["slug"];
+    name: Team["name"];
+  } | null;
   _count: {
     responses: number;
   };
@@ -58,7 +60,7 @@ const Actions = ({
 }: {
   form: RoutingFormWithResponseCount;
   mutation: {
-    isLoading: boolean;
+    isPending: boolean;
   };
 }) => {
   const { t } = useLocale();
@@ -66,8 +68,10 @@ const Actions = ({
 
   return (
     <div className="flex items-center">
-      <FormAction className="self-center" data-testid="toggle-form" action="toggle" routingForm={form} />
-      <VerticalDivider />
+      <div className="hidden items-center sm:inline-flex">
+        <FormAction className="self-center" data-testid="toggle-form" action="toggle" routingForm={form} />
+        <VerticalDivider />
+      </div>
       <ButtonGroup combined containerProps={{ className: "hidden md:inline-flex items-center" }}>
         <Tooltip content={t("preview")}>
           <FormAction
@@ -78,7 +82,7 @@ const Actions = ({
             type="button"
             rel="noreferrer"
             action="preview"
-            StartIcon={FiExternalLink}
+            StartIcon="external-link"
           />
         </Tooltip>
         <FormAction
@@ -87,7 +91,7 @@ const Actions = ({
           color="secondary"
           variant="icon"
           type="button"
-          StartIcon={FiLink}
+          StartIcon="link"
           tooltip={t("copy_link_to_form")}
         />
 
@@ -99,7 +103,7 @@ const Actions = ({
             color="secondary"
             variant="icon"
             type="button"
-            StartIcon={FiDownload}
+            StartIcon="download"
           />
         </Tooltip>
         <FormAction
@@ -107,7 +111,7 @@ const Actions = ({
           action="embed"
           color="secondary"
           variant="icon"
-          StartIcon={FiCode}
+          StartIcon="code"
           tooltip={t("embed")}
         />
         <DropdownMenuSeparator />
@@ -116,20 +120,20 @@ const Actions = ({
           action="_delete"
           // className="mr-3"
           variant="icon"
-          StartIcon={FiTrash}
+          StartIcon="trash"
           color="secondary"
           type="button"
           tooltip={t("delete")}
         />
         {typeformApp?.isInstalled ? (
-          <FormActionsDropdown form={form}>
+          <FormActionsDropdown>
             <FormAction
               data-testid="copy-redirect-url"
               routingForm={form}
               action="copyRedirectUrl"
               color="minimal"
               type="button"
-              StartIcon={FiLink}>
+              StartIcon="link">
               {t("Copy Typeform Redirect Url")}
             </FormAction>
           </FormActionsDropdown>
@@ -137,7 +141,7 @@ const Actions = ({
       </ButtonGroup>
 
       <div className="flex md:hidden">
-        <FormActionsDropdown form={form}>
+        <FormActionsDropdown>
           <FormAction
             routingForm={form}
             color="minimal"
@@ -145,7 +149,7 @@ const Actions = ({
             type="button"
             rel="noreferrer"
             action="preview"
-            StartIcon={FiExternalLink}>
+            StartIcon="external-link">
             {t("preview")}
           </FormAction>
           <FormAction
@@ -154,7 +158,7 @@ const Actions = ({
             routingForm={form}
             color="minimal"
             type="button"
-            StartIcon={FiLink}>
+            StartIcon="link">
             {t("copy_link_to_form")}
           </FormAction>
           <FormAction
@@ -163,7 +167,7 @@ const Actions = ({
             className="w-full"
             color="minimal"
             type="button"
-            StartIcon={FiDownload}>
+            StartIcon="download">
             {t("download_responses")}
           </FormAction>
           <FormAction
@@ -172,7 +176,7 @@ const Actions = ({
             color="minimal"
             type="button"
             className="w-full"
-            StartIcon={FiCode}>
+            StartIcon="code">
             {t("embed")}
           </FormAction>
           {typeformApp ? (
@@ -182,24 +186,34 @@ const Actions = ({
               action="copyRedirectUrl"
               color="minimal"
               type="button"
-              StartIcon={FiLink}>
+              StartIcon="link">
               {t("Copy Typeform Redirect Url")}
             </FormAction>
           ) : null}
-          <DropdownMenuSeparator />
+          <DropdownMenuSeparator className="hidden sm:block" />
           <FormAction
             action="_delete"
             routingForm={form}
             className="w-full"
             type="button"
             color="destructive"
-            StartIcon={FiTrash}>
+            StartIcon="trash">
             {t("delete")}
           </FormAction>
+          <div className="block sm:hidden">
+            <DropdownMenuSeparator />
+            <FormAction
+              data-testid="toggle-form"
+              action="toggle"
+              routingForm={form}
+              label="Disable Form"
+              extraClassNames="hover:bg-subtle cursor-pointer rounded-[5px] pr-4"
+            />
+          </div>
         </FormActionsDropdown>
       </div>
       <VerticalDivider />
-      <Button data-testid="update-form" loading={mutation.isLoading} type="submit" color="primary">
+      <Button data-testid="update-form" loading={mutation.isPending} type="submit" color="primary">
         {t("save")}
       </Button>
     </div>
@@ -214,32 +228,70 @@ type SingleFormComponentProps = {
     appUrl: string;
     hookForm: UseFormReturn<RoutingFormWithResponseCount>;
   }>;
+  enrichedWithUserProfileForm?: inferSSRProps<
+    typeof getServerSidePropsForSingleFormView
+  >["enrichedWithUserProfileForm"];
 };
 
-function SingleForm({ form, appUrl, Page }: SingleFormComponentProps) {
-  const utils = trpc.useContext();
+function SingleForm({ form, appUrl, Page, enrichedWithUserProfileForm }: SingleFormComponentProps) {
+  const utils = trpc.useUtils();
   const { t } = useLocale();
 
   const [isTestPreviewOpen, setIsTestPreviewOpen] = useState(false);
   const [response, setResponse] = useState<Response>({});
   const [decidedAction, setDecidedAction] = useState<Route["action"] | null>(null);
+  const [skipFirstUpdate, setSkipFirstUpdate] = useState(true);
+  const [eventTypeUrl, setEventTypeUrl] = useState("");
 
   function testRouting() {
     const action = processRoute({ form, response });
+    if (action.type === "eventTypeRedirectUrl") {
+      setEventTypeUrl(
+        enrichedWithUserProfileForm
+          ? getAbsoluteEventTypeRedirectUrl({
+              eventTypeRedirectUrl: action.value,
+              form: enrichedWithUserProfileForm,
+              allURLSearchParams: new URLSearchParams(),
+            })
+          : ""
+      );
+    }
     setDecidedAction(action);
   }
 
-  const hookForm = useForm({
-    defaultValues: form,
-  });
+  const hookForm = useFormContext<RoutingFormWithResponseCount>();
 
   useEffect(() => {
-    hookForm.reset(form);
-  }, [form, hookForm]);
+    //  The first time a tab is opened, the hookForm copies the form data (saved version, from the backend),
+    // and then it is considered the source of truth.
+
+    // There are two events we need to overwrite the hookForm data with the form data coming from the server.
+
+    // 1 - When we change the edited form.
+
+    // 2 - When the form is saved elsewhere (such as in another browser tab)
+
+    // In the second case. We skipped the first execution of useEffect to differentiate a tab change from a form change,
+    // because each time a tab changes, a new component is created and another useEffect is executed.
+    // An update from the form always occurs after the first useEffect execution.
+    if (Object.keys(hookForm.getValues()).length === 0 || hookForm.getValues().id !== form.id) {
+      hookForm.reset(form);
+    }
+
+    if (skipFirstUpdate) {
+      setSkipFirstUpdate(false);
+    } else {
+      hookForm.reset(form);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form]);
+
+  const sendUpdatesTo = hookForm.watch("settings.sendUpdatesTo", []) as number[];
+  const sendToAll = hookForm.watch("settings.sendToAll", false) as boolean;
 
   const mutation = trpc.viewer.appRoutingForms.formMutation.useMutation({
     onSuccess() {
-      showToast("Form updated successfully.", "success");
+      showToast(t("form_updated_successfully"), "success");
     },
     onError(e) {
       if (e.message) {
@@ -268,12 +320,21 @@ function SingleForm({ form, appUrl, Page }: SingleFormComponentProps) {
         <FormActionsProvider appUrl={appUrl}>
           <Meta title={form.name} description={form.description || ""} />
           <ShellMain
-            heading={form.name}
+            heading={
+              <div className="flex">
+                <div>{form.name}</div>
+                {form.team && (
+                  <Badge className="ml-4 mt-1" variant="gray">
+                    {form.team.name}
+                  </Badge>
+                )}
+              </div>
+            }
             subtitle={form.description || ""}
             backPath={`/${appUrl}/forms`}
             CTA={<Actions form={form} mutation={mutation} />}>
-            <div className="-mx-4 px-4 sm:px-6 md:-mx-8 md:px-8">
-              <div className="flex flex-col items-center md:flex-row md:items-start">
+            <div className="-mx-4 mt-4 px-4 sm:px-6 md:-mx-8 md:mt-0 md:px-8">
+              <div className="flex flex-col items-center items-baseline md:flex-row md:items-start">
                 <div className="lg:min-w-72 lg:max-w-72 mb-6 md:mr-6">
                   <TextField
                     type="text"
@@ -291,33 +352,88 @@ function SingleForm({ form, appUrl, Page }: SingleFormComponentProps) {
                   />
 
                   <div className="mt-6">
-                    <Controller
-                      name="settings.emailOwnerOnSubmission"
-                      control={hookForm.control}
-                      render={({ field: { value, onChange } }) => {
-                        return (
-                          <SettingsToggle
-                            title={t("routing_forms_send_email_owner")}
-                            description={t("routing_forms_send_email_owner_description")}
-                            checked={value}
-                            onCheckedChange={(val) => onChange(val)}
-                          />
-                        );
-                      }}
-                    />
+                    {form.teamId ? (
+                      <div className="flex flex-col">
+                        <span className="text-emphasis mb-3 block text-sm font-medium leading-none">
+                          {t("routing_forms_send_email_to")}
+                        </span>
+                        <AddMembersWithSwitch
+                          teamMembers={form.teamMembers.map((member) => ({
+                            value: member.id.toString(),
+                            label: member.name || "",
+                            avatar: member.avatarUrl || "",
+                            email: member.email,
+                            isFixed: true,
+                          }))}
+                          value={sendUpdatesTo.map((userId) => ({
+                            isFixed: true,
+                            userId: userId,
+                            priority: 1,
+                          }))}
+                          onChange={(value) => {
+                            hookForm.setValue(
+                              "settings.sendUpdatesTo",
+                              value.map((teamMember) => teamMember.userId),
+                              { shouldDirty: true }
+                            );
+                            hookForm.setValue("settings.emailOwnerOnSubmission", false, {
+                              shouldDirty: true,
+                            });
+                          }}
+                          assignAllTeamMembers={sendToAll}
+                          setAssignAllTeamMembers={(value) => {
+                            hookForm.setValue("settings.sendToAll", !!value, { shouldDirty: true });
+                          }}
+                          automaticAddAllEnabled={true}
+                          isFixed={true}
+                          onActive={() => {
+                            hookForm.setValue(
+                              "settings.sendUpdatesTo",
+                              form.teamMembers.map((teamMember) => teamMember.id),
+                              { shouldDirty: true }
+                            );
+                            hookForm.setValue("settings.emailOwnerOnSubmission", false, {
+                              shouldDirty: true,
+                            });
+                          }}
+                          placeholder={t("select_members")}
+                          containerClassName="!px-0 !pb-0 !pt-0"
+                        />
+                      </div>
+                    ) : (
+                      <Controller
+                        name="settings.emailOwnerOnSubmission"
+                        control={hookForm.control}
+                        render={({ field: { value, onChange } }) => {
+                          return (
+                            <SettingsToggle
+                              title={t("routing_forms_send_email_owner")}
+                              description={t("routing_forms_send_email_owner_description")}
+                              checked={value}
+                              onCheckedChange={(val) => {
+                                onChange(val);
+                                hookForm.unregister("settings.sendUpdatesTo");
+                              }}
+                            />
+                          );
+                        }}
+                      />
+                    )}
                   </div>
 
                   {form.routers.length ? (
                     <div className="mt-6">
-                      <div className="mb-2 block text-sm font-semibold leading-none text-black ">Routers</div>
-                      <p className="-mt-1 text-xs leading-normal text-gray-600">
+                      <div className="text-emphasis mb-2 block text-sm font-semibold leading-none ">
+                        {t("routers")}
+                      </div>
+                      <p className="text-default -mt-1 text-xs leading-normal">
                         {t("modifications_in_fields_warning")}
                       </p>
                       <div className="flex">
                         {form.routers.map((router) => {
                           return (
                             <div key={router.id} className="mr-2">
-                              <Link href={`/${appUrl}/route-builder/${router.id}`}>
+                              <Link href={`${appUrl}/route-builder/${router.id}`}>
                                 <Badge variant="gray">{router.name}</Badge>
                               </Link>
                             </div>
@@ -329,17 +445,17 @@ function SingleForm({ form, appUrl, Page }: SingleFormComponentProps) {
 
                   {connectedForms?.length ? (
                     <div className="mt-6">
-                      <div className="mb-2 block text-sm font-semibold leading-none text-black ">
+                      <div className="text-emphasis mb-2 block text-sm font-semibold leading-none ">
                         {t("connected_forms")}
                       </div>
-                      <p className="-mt-1 text-xs leading-normal text-gray-600">
+                      <p className="text-default -mt-1 text-xs leading-normal">
                         {t("form_modifications_warning")}
                       </p>
                       <div className="flex">
                         {connectedForms.map((router) => {
                           return (
                             <div key={router.id} className="mr-2">
-                              <Link href={`/${appUrl}/route-builder/${router.id}`}>
+                              <Link href={`${appUrl}/route-builder/${router.id}`}>
                                 <Badge variant="default">{router.name}</Badge>
                               </Link>
                             </div>
@@ -357,18 +473,26 @@ function SingleForm({ form, appUrl, Page }: SingleFormComponentProps) {
                       {t("test_preview")}
                     </Button>
                   </div>
+                  {form.routes?.every(isFallbackRoute) && (
+                    <Alert
+                      className="mt-6 !bg-orange-100 font-semibold text-orange-900"
+                      iconClassName="!text-orange-900"
+                      severity="neutral"
+                      title={t("no_routes_defined")}
+                    />
+                  )}
                   {!form._count?.responses && (
                     <>
                       <Alert
-                        className="mt-6"
+                        className="mt-2 px-4 py-3"
                         severity="neutral"
                         title={t("no_responses_yet")}
-                        message={t("responses_collection_waiting_description")}
+                        CustomIcon="message-circle"
                       />
                     </>
                   )}
                 </div>
-                <div className="w-full rounded-md border border-gray-200 p-8">
+                <div className="border-subtle bg-muted w-full rounded-md border p-8">
                   <RoutingNavBar appUrl={appUrl} form={form} />
                   <Page hookForm={hookForm} form={form} appUrl={appUrl} />
                 </div>
@@ -391,24 +515,24 @@ function SingleForm({ form, appUrl, Page }: SingleFormComponentProps) {
               </div>
               <div>
                 {decidedAction && (
-                  <div className="mt-5 rounded-md bg-gray-100 p-3">
+                  <div className="bg-subtle text-default mt-5 rounded-md p-3">
                     <div className="font-bold ">{t("route_to")}:</div>
                     <div className="mt-2">
                       {RoutingPages.map((page) => {
                         if (page.value !== decidedAction.type) return null;
                         return (
-                          <div key={page.value} data-testid="test-routing-result-type">
+                          <span key={page.value} data-testid="test-routing-result-type">
                             {page.label}
-                          </div>
+                          </span>
                         );
                       })}
                       :{" "}
                       {decidedAction.type === "customPageMessage" ? (
-                        <span className="text-gray-700" data-testid="test-routing-result">
+                        <span className="text-default" data-testid="test-routing-result">
                           {decidedAction.value}
                         </span>
                       ) : decidedAction.type === "externalRedirectUrl" ? (
-                        <span className="text-gray-700 underline">
+                        <span className="text-default underline">
                           <a
                             target="_blank"
                             data-testid="test-routing-result"
@@ -423,10 +547,10 @@ function SingleForm({ form, appUrl, Page }: SingleFormComponentProps) {
                           </a>
                         </span>
                       ) : (
-                        <span className="text-gray-700 underline">
+                        <span className="text-default underline">
                           <a
                             target="_blank"
-                            href={`/${decidedAction.value}`}
+                            href={eventTypeUrl}
                             rel="noreferrer"
                             data-testid="test-routing-result">
                             {decidedAction.value}
@@ -460,7 +584,7 @@ function SingleForm({ form, appUrl, Page }: SingleFormComponentProps) {
 }
 
 export default function SingleFormWrapper({ form: _form, ...props }: SingleFormComponentProps) {
-  const { data: form, isLoading } = trpc.viewer.appRoutingForms.formQuery.useQuery(
+  const { data: form, isPending } = trpc.viewer.appRoutingForms.formQuery.useQuery(
     { id: _form.id },
     {
       initialData: _form,
@@ -469,7 +593,7 @@ export default function SingleFormWrapper({ form: _form, ...props }: SingleFormC
   );
   const { t } = useLocale();
 
-  if (isLoading) {
+  if (isPending) {
     // It shouldn't be possible because we are passing the data from SSR to it as initialData. So, no need for skeleton here
     return null;
   }
@@ -477,67 +601,11 @@ export default function SingleFormWrapper({ form: _form, ...props }: SingleFormC
   if (!form) {
     throw new Error(t("something_went_wrong"));
   }
-  return <SingleForm form={form} {...props} />;
+  return (
+    <LicenseRequired>
+      <SingleForm form={form} {...props} />
+    </LicenseRequired>
+  );
 }
 
-export const getServerSidePropsForSingleFormView = async function getServerSidePropsForSingleFormView(
-  context: AppGetServerSidePropsContext,
-  prisma: AppPrisma,
-  user: AppUser,
-  ssrInit: AppSsrInit
-) {
-  const ssr = await ssrInit(context);
-
-  if (!user) {
-    return {
-      redirect: {
-        permanent: false,
-        destination: "/auth/login",
-      },
-    };
-  }
-  const { params } = context;
-  if (!params) {
-    return {
-      notFound: true,
-    };
-  }
-  const formId = params.appPages[0];
-  if (!formId || params.appPages.length > 1) {
-    return {
-      notFound: true,
-    };
-  }
-
-  const isFormEditAllowed = (await import("../lib/isFormEditAllowed")).isFormEditAllowed;
-  if (!(await isFormEditAllowed({ userId: user.id, formId }))) {
-    return {
-      notFound: true,
-    };
-  }
-
-  const form = await prisma.app_RoutingForms_Form.findUnique({
-    where: {
-      id: formId,
-    },
-    include: {
-      _count: {
-        select: {
-          responses: true,
-        },
-      },
-    },
-  });
-  if (!form) {
-    return {
-      notFound: true,
-    };
-  }
-
-  return {
-    props: {
-      trpcState: ssr.dehydrate(),
-      form: await getSerializableForm(form),
-    },
-  };
-};
+export { getServerSidePropsForSingleFormView };

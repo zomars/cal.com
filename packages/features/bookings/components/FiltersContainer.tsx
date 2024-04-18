@@ -1,43 +1,41 @@
-import { Fragment, ReactNode } from "react";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 
-import { PeopleFilter } from "./PeopleFilter";
-import { TeamsMemberFilter } from "./TeamFilter";
+import { PeopleFilter } from "@calcom/features/bookings/components/PeopleFilter";
+import { useFilterQuery } from "@calcom/features/bookings/lib/useFilterQuery";
+import { TeamsFilter } from "@calcom/features/filters/components/TeamsFilter";
+import { useLocale } from "@calcom/lib/hooks/useLocale";
+import { Tooltip, Button } from "@calcom/ui";
 
-type FilterTypes = "teams" | "people";
+import { EventTypeFilter } from "./EventTypeFilter";
 
-type Filter = {
-  name: FilterTypes;
-  controllingQueryParams?: string[]; // this is what the filter controls - but also we show the filter if any of these query params are present
-  component: ReactNode;
-  showByDefault?: boolean;
-};
+export interface FiltersContainerProps {
+  isFiltersVisible: boolean;
+}
 
-const filters: Filter[] = [
-  {
-    name: "teams",
-    component: <TeamsMemberFilter />,
-    controllingQueryParams: ["teamId"],
-    showByDefault: true,
-  },
-  {
-    name: "people",
-    component: <PeopleFilter />,
-    controllingQueryParams: ["usersId"],
-    showByDefault: true,
-  },
-];
+export function FiltersContainer({ isFiltersVisible }: FiltersContainerProps) {
+  const [animationParentRef] = useAutoAnimate<HTMLDivElement>();
+  const { removeAllQueryParams } = useFilterQuery();
+  const { t } = useLocale();
 
-export function FiltersContainer() {
   return (
-    <div className="flex w-full space-x-2 rtl:space-x-reverse">
-      {filters.map((filter) => {
-        if (!filter.showByDefault) {
-          // TODO: check if any of the controllingQueryParams are present in the query params and show the filter if so
-          // TODO: Also check state to see if the user has toggled the filter
-          return null;
-        }
-        return <Fragment key={filter.name}>{filter.component}</Fragment>;
-      })}
+    <div ref={animationParentRef}>
+      {isFiltersVisible ? (
+        <div className="no-scrollbar flex w-full space-x-2 overflow-x-scroll rtl:space-x-reverse">
+          <PeopleFilter />
+          <EventTypeFilter />
+          <TeamsFilter />
+          <Tooltip content={t("remove_filters")}>
+            <Button
+              color="secondary"
+              type="button"
+              onClick={() => {
+                removeAllQueryParams();
+              }}>
+              {t("remove_filters")}
+            </Button>
+          </Tooltip>
+        </div>
+      ) : null}
     </div>
   );
 }

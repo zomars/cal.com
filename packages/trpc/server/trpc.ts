@@ -1,80 +1,55 @@
 import superjson from "superjson";
 
-import rateLimit from "@calcom/lib/rateLimit";
-
-import { initTRPC, TRPCError } from "@trpc/server";
+import { initTRPC } from "@trpc/server";
 
 import type { createContextInner } from "./createContext";
+import type { UserFromSession } from "./middlewares/sessionMiddleware";
 
-const t = initTRPC.context<typeof createContextInner>().create({
+export const tRPCContext = initTRPC.context<typeof createContextInner>().create({
   transformer: superjson,
 });
 
-const perfMiddleware = t.middleware(async ({ path, type, next }) => {
-  performance.mark("Start");
-  const result = await next();
-  performance.mark("End");
-  performance.measure(`[${result.ok ? "OK" : "ERROR"}][$1] ${type} '${path}'`, "Start", "End");
-  return result;
-});
+export const router = tRPCContext.router;
+export const mergeRouters = tRPCContext.mergeRouters;
+export const middleware = tRPCContext.middleware;
+export const procedure = tRPCContext.procedure;
 
-const isAuthedMiddleware = t.middleware(({ ctx, next }) => {
-  if (!ctx.user || !ctx.session) {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
+export type TrpcSessionUser = UserFromSession;
+
+// eslint-disable-next-line @typescript-eslint/ban-types
+const UNSTABLE_HANDLER_CACHE: Record<string, Function> = {};
+
+/**
+ * This function will import the module defined in importer just once and then cache the default export of that module.
+ *
+ * It gives you the default export of the module.
+ *
+ * **Note: It is your job to ensure that the name provided is unique across all routes.**
+ * @example
+ * ```ts
+const handler = await importHandler("myUniqueNameSpace", () => import("./getUser.handler"));
+return handler({ ctx, input });
+ * ```
+ */
+export const importHandler = async <
+  T extends {
+    // eslint-disable-next-line @typescript-eslint/ban-types
+    default: Function;
   }
-  return next({
-    ctx: {
-      // infers that `user` and `session` are non-nullable to downstream procedures
-      session: ctx.session,
-      user: ctx.user,
-    },
-  });
-});
+>(
+  /**
+   * The name of the handler in cache. It has to be unique across all routes
+   */
+  name: string,
+  importer: () => Promise<T>
+) => {
+  const nameInCache = name as keyof typeof UNSTABLE_HANDLER_CACHE;
 
-const isAdminMiddleware = isAuthedMiddleware.unstable_pipe(({ ctx, next }) => {
-  if (ctx.user.role !== "ADMIN") {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
+  if (!UNSTABLE_HANDLER_CACHE[nameInCache]) {
+    const importedModule = await importer();
+    UNSTABLE_HANDLER_CACHE[nameInCache] = importedModule.default;
+    return importedModule.default as T["default"];
   }
-  return next({
-    ctx: { user: ctx.user },
-  });
-});
 
-interface IRateLimitOptions {
-  intervalInMs: number;
-  limit: number;
-}
-const isRateLimitedByUserIdMiddleware = ({ intervalInMs, limit }: IRateLimitOptions) =>
-  t.middleware(({ ctx, next }) => {
-    // validate user exists
-    if (!ctx.user) {
-      throw new TRPCError({ code: "UNAUTHORIZED" });
-    }
-
-    const { isRateLimited } = rateLimit({ intervalInMs }).check(limit, ctx.user.id.toString());
-
-    if (isRateLimited) {
-      throw new TRPCError({ code: "TOO_MANY_REQUESTS" });
-    }
-
-    return next({
-      ctx: {
-        // infers that `user` and `session` are non-nullable to downstream procedures
-        session: ctx.session,
-        user: ctx.user,
-      },
-    });
-  });
-
-export const router = t.router;
-export const mergeRouters = t.mergeRouters;
-export const middleware = t.middleware;
-export const publicProcedure = t.procedure.use(perfMiddleware);
-export const authedProcedure = t.procedure.use(perfMiddleware).use(isAuthedMiddleware);
-export const authedRateLimitedProcedure = ({ intervalInMs, limit }: IRateLimitOptions) =>
-  t.procedure
-    .use(perfMiddleware)
-    .use(isAuthedMiddleware)
-    .use(isRateLimitedByUserIdMiddleware({ intervalInMs, limit }));
-
-export const authedAdminProcedure = t.procedure.use(perfMiddleware).use(isAdminMiddleware);
+  return UNSTABLE_HANDLER_CACHE[nameInCache] as unknown as T["default"];
+};

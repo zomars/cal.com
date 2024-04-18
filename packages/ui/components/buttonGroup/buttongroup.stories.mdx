@@ -1,83 +1,124 @@
-import { Canvas, Meta, Story, ArgsTable } from '@storybook/addon-docs';
-import { Examples, Example, Note, Title,CustomArgsTable,VariantsTable,VariantRow } from '@calcom/storybook/components'
-import { FiTrash, FiNavigation, FiClipboard } from '../icon';
-import { ButtonGroup} from './ButtonGroup';
-import { Button} from '../button/Button';
+import { Canvas, Meta, Story, ArgsTable } from "@storybook/addon-docs";
+
+import {
+  Examples,
+  Example,
+  Note,
+  Title,
+  CustomArgsTable,
+  VariantsTable,
+  VariantRow,
+} from "@calcom/storybook/components";
+
+import { Icon } from "../..";
+import { Button } from "../button/Button";
+import { ButtonGroup } from "./ButtonGroup";
 
 <Meta title="UI/Button Group" component={ButtonGroup} />
 
-<Title title="Button Group" suffix="Brief" subtitle="Version 2.0 — Last Update: 22 Aug 2022"/>
+<Title title="Button Group" suffix="Brief" subtitle="Version 2.0 — Last Update: 22 Aug 2022" />
 
 ## Definition
+
 Button group enables multiple buttons to be combined into a single unit. It offers users access to frequently performed, related actions.
 
 ## Structure
 
 <CustomArgsTable of={ButtonGroup} />
 
-
-<Examples title="Breadcrumb style"
-  footNote ={
+<Examples
+  title="Breadcrumb style"
+  footNote={
     <ul>
       <li>
-        Seperated: In general, seperated button group style can be included in container such as card, modal, and page.
+        Seperated: In general, seperated button group style can be included in container such as card, modal,
+        and page.
       </li>
-      <li>
-        Combined: Combined button group can be used standalone e.g. mini toggles for calendars
-      </li>
+      <li>Combined: Combined button group can be used standalone e.g. mini toggles for calendars</li>
     </ul>
-  }
->
-  <Example title="Default" >
+  }>
+  <Example title="Default">
     <ButtonGroup>
-      <Button StartIcon={FiTrash} variant="icon" color="secondary" />
-      <Button StartIcon={FiNavigation} variant="icon" color="secondary" />
-      <Button StartIcon={FiClipboard} variant="icon" color="secondary" />
+      <Button StartIcon="trash" variant="icon" color="secondary" />
+      <Button StartIcon="navigation" variant="icon" color="secondary" />
+      <Button StartIcon="clipboard" variant="icon" color="secondary" />
     </ButtonGroup>
   </Example>
   <Example title="Combined">
     <ButtonGroup combined>
-      <Button StartIcon={FiTrash} variant="icon" color="secondary" />
-      <Button StartIcon={FiNavigation} variant="icon" color="secondary" />
-      <Button StartIcon={FiClipboard} variant="icon" color="secondary" />
+      <Button StartIcon="trash" variant="icon" color="secondary" />
+      <Button StartIcon="navigation" variant="icon" color="secondary" />
+      <Button StartIcon="clipboard" variant="icon" color="secondary" />
     </ButtonGroup>
   </Example>
 </Examples>
 
-
 <Canvas>
-  <Story
-    name="All Variatns">
-    <VariantsTable titles={["Default",'Secondary',"Minimal"]} columnMinWidth={150}>
+  <Story name="All Variants">
+    <VariantsTable titles={["Default", "Secondary", "Minimal"]} columnMinWidth={150}>
       <VariantRow variant="Default">
         <ButtonGroup>
-          <Button StartIcon={FiTrash} variant="icon"  />
-          <Button StartIcon={FiNavigation} variant="icon"/>
-          <Button StartIcon={FiClipboard} variant="icon"  />
+          <Button StartIcon="trash" variant="icon" />
+          <Button StartIcon="navigation" variant="icon" />
+          <Button StartIcon="clipboard" variant="icon" />
         </ButtonGroup>
         <ButtonGroup>
-          <Button StartIcon={FiTrash} variant="icon" color="secondary" />
-          <Button StartIcon={FiNavigation} variant="icon" color="secondary" />
-          <Button StartIcon={FiClipboard} variant="icon" color="secondary" />
+          <Button StartIcon="trash" variant="icon" color="secondary" />
+          <Button StartIcon="navigation" variant="icon" color="secondary" />
+          <Button StartIcon="clipboard" variant="icon" color="secondary" />
         </ButtonGroup>
         <ButtonGroup>
-          <Button StartIcon={FiTrash} variant="icon" color="minimal" />
-          <Button StartIcon={FiNavigation} variant="icon" color="minimal" />
-          <Button StartIcon={FiClipboard} variant="icon" color="minimal" />
+          <Button StartIcon="trash" variant="icon" color="minimal" />
+          <Button StartIcon="navigation" variant="icon" color="minimal" />
+          <Button StartIcon="clipboard" variant="icon" color="minimal" />
         </ButtonGroup>
       </VariantRow>
       <VariantRow variant="Combined">
         <ButtonGroup combined>
-          <Button StartIcon={FiTrash} variant="icon"  />
-          <Button StartIcon={FiNavigation} variant="icon"  />
-          <Button StartIcon={FiClipboard} variant="icon"  />
+          <Button StartIcon="trash" variant="icon" />
+          <Button StartIcon="navigation" variant="icon" />
+          <Button StartIcon="clipboard" variant="icon" />
         </ButtonGroup>
-         <ButtonGroup combined>
-          <Button StartIcon={FiTrash} variant="icon" color="secondary"  />
-          <Button StartIcon={FiNavigation} variant="icon" color="secondary"  />
-          <Button StartIcon={FiClipboard} variant="icon" color="secondary"  />
+        <ButtonGroup combined>
+          <Button StartIcon="trash" variant="icon" color="secondary" />
+          <Button StartIcon="navigation" variant="icon" color="secondary" />
+          <Button StartIcon="clipboard" variant="icon" color="secondary" />
         </ButtonGroup>
       </VariantRow>
     </VariantsTable>
+  </Story>
+</Canvas>
+
+<Canvas>
+  <Story
+    name="ButtonGroup Playground"
+    args={{
+      color: "secondary",
+      combined: false,
+    }}
+    argTypes={{
+      color: {
+        control: {
+          type: "select",
+          options: ["primary", "secondary", "minimal"],
+        },
+      },
+      combined: {
+        control: {
+          type: "boolean",
+        },
+      },
+    }}>
+    {({ color, combined }) => (
+      <VariantsTable titles={[`${color}`]} columnMinWidth={150}>
+        <VariantRow variant="">
+          <ButtonGroup combined={combined}>
+            <Button StartIcon="trash" variant="icon" color={color} />
+            <Button StartIcon="navigation" variant="icon" color={color} />
+            <Button StartIcon="clipboard" variant="icon" color={color} />
+          </ButtonGroup>
+        </VariantRow>
+      </VariantsTable>
+    )}
   </Story>
 </Canvas>

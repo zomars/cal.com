@@ -1,29 +1,25 @@
-import { useRouter } from "next/router";
+"use client";
+
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { HOSTED_CAL_FEATURES } from "@calcom/lib/constants";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
+import { useParamsWithFallback } from "@calcom/lib/hooks/useParamsWithFallback";
 import { trpc } from "@calcom/trpc/react";
-import { AppSkeletonLoader as SkeletonLoader } from "@calcom/ui";
-import { Meta } from "@calcom/ui";
+import { AppSkeletonLoader as SkeletonLoader, Meta } from "@calcom/ui";
 
 import { getLayout } from "../../../settings/layouts/SettingsLayout";
 import SSOConfiguration from "../components/SSOConfiguration";
 
 const SAMLSSO = () => {
+  const params = useParamsWithFallback();
   const { t } = useLocale();
   const router = useRouter();
 
-  const teamId = Number(router.query.id);
+  const teamId = Number(params.id);
 
-  const { data: team, isLoading } = trpc.viewer.teams.get.useQuery(
-    { teamId },
-    {
-      onError: () => {
-        router.push("/settings");
-      },
-    }
-  );
+  const { data: team, isPending, error } = trpc.viewer.teams.get.useQuery({ teamId });
 
   useEffect(() => {
     if (!HOSTED_CAL_FEATURES) {
@@ -31,7 +27,15 @@ const SAMLSSO = () => {
     }
   }, []);
 
-  if (isLoading) {
+  useEffect(
+    function refactorMeWithoutEffect() {
+      if (error) {
+        router.push("/settings");
+      }
+    },
+    [error]
+  );
+  if (isPending) {
     return <SkeletonLoader />;
   }
 
@@ -41,7 +45,7 @@ const SAMLSSO = () => {
   }
 
   return (
-    <div className="w-full bg-white sm:mx-0 xl:mt-0">
+    <div className="bg-default w-full sm:mx-0 xl:mt-0">
       <Meta title={t("sso_configuration")} description={t("sso_configuration_description")} />
       <SSOConfiguration teamId={teamId} />
     </div>

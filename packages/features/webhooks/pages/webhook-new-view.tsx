@@ -1,27 +1,48 @@
-import { useRouter } from "next/router";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 import { APP_NAME } from "@calcom/lib/constants";
+import { useCompatSearchParams } from "@calcom/lib/hooks/useCompatSearchParams";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { trpc } from "@calcom/trpc/react";
-import { Meta, showToast, SkeletonContainer } from "@calcom/ui";
+import { Meta, showToast, SkeletonContainer, SkeletonText } from "@calcom/ui";
 
 import { getLayout } from "../../settings/layouts/SettingsLayout";
-import WebhookForm, { WebhookFormSubmitData } from "../components/WebhookForm";
+import type { WebhookFormSubmitData } from "../components/WebhookForm";
+import WebhookForm from "../components/WebhookForm";
+import { subscriberUrlReserved } from "../lib/subscriberUrlReserved";
 
+const SkeletonLoader = ({ title, description }: { title: string; description: string }) => {
+  return (
+    <SkeletonContainer>
+      <Meta title={title} description={description} borderInShellHeader={true} />
+      <div className="divide-subtle border-subtle space-y-6 rounded-b-lg border border-t-0 px-6 py-4">
+        <SkeletonText className="h-8 w-full" />
+        <SkeletonText className="h-8 w-full" />
+      </div>
+    </SkeletonContainer>
+  );
+};
 const NewWebhookView = () => {
+  const searchParams = useCompatSearchParams();
   const { t } = useLocale();
-  const utils = trpc.useContext();
+  const utils = trpc.useUtils();
   const router = useRouter();
-  const { data: installedApps, isLoading } = trpc.viewer.integrations.useQuery(
+  const session = useSession();
+
+  const teamId = searchParams?.get("teamId") ? Number(searchParams.get("teamId")) : undefined;
+  const platform = searchParams?.get("platform") ? Boolean(searchParams.get("platform")) : false;
+
+  const { data: installedApps, isPending } = trpc.viewer.integrations.useQuery(
     { variant: "other", onlyInstalled: true },
     {
       suspense: true,
-      enabled: router.isReady,
+      enabled: session.status === "authenticated",
     }
   );
   const { data: webhooks } = trpc.viewer.webhook.list.useQuery(undefined, {
     suspense: true,
-    enabled: router.isReady,
+    enabled: session.status === "authenticated",
   });
 
   const createWebhookMutation = trpc.viewer.webhook.create.useMutation({
@@ -35,14 +56,17 @@ const NewWebhookView = () => {
     },
   });
 
-  const subscriberUrlReserved = (subscriberUrl: string, id?: string): boolean => {
-    return !!webhooks?.find(
-      (webhook) => webhook.subscriberUrl === subscriberUrl && (!id || webhook.id !== id)
-    );
-  };
-
   const onCreateWebhook = async (values: WebhookFormSubmitData) => {
-    if (subscriberUrlReserved(values.subscriberUrl, values.id)) {
+    if (
+      subscriberUrlReserved({
+        subscriberUrl: values.subscriberUrl,
+        id: values.id,
+        webhooks,
+        teamId,
+        userId: session.data?.user.id,
+        platform,
+      })
+    ) {
       showToast(t("webhook_subscriber_url_reserved"), "error");
       return;
     }
@@ -57,10 +81,18 @@ const NewWebhookView = () => {
       active: values.active,
       payloadTemplate: values.payloadTemplate,
       secret: values.secret,
+      teamId,
+      platform,
     });
   };
 
-  if (isLoading) return <SkeletonContainer />;
+  if (isPending)
+    return (
+      <SkeletonLoader
+        title={t("add_webhook")}
+        description={t("add_webhook_description", { appName: APP_NAME })}
+      />
+    );
 
   return (
     <>
@@ -68,9 +100,13 @@ const NewWebhookView = () => {
         title={t("add_webhook")}
         description={t("add_webhook_description", { appName: APP_NAME })}
         backButton
+        borderInShellHeader={true}
       />
-
-      <WebhookForm onSubmit={onCreateWebhook} apps={installedApps?.items.map((app) => app.slug)} />
+      <WebhookForm
+        noRoutingFormTriggers={false}
+        onSubmit={onCreateWebhook}
+        apps={installedApps?.items.map((app) => app.slug)}
+      />
     </>
   );
 };

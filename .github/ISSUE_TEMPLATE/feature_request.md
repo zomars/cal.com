@@ -39,3 +39,17 @@ assignees: ""
 -->
 
 (Write your answer here.)
+
+### Requirement/Document
+
+<!--
+  Is there any type of document that could support that feature?
+-->
+
+(Share it here.)
+
+---
+##### House rules
+- If this issue has a `🚨 needs approval` label, don't start coding yet. Wait until a core member approves feature request by removing this label, then you can start coding.
+  - For clarity: Non-core member issues automatically get the `🚨 needs approval` label.
+  - Your feature ideas are invaluable to us! However, they undergo review to ensure alignment with the product's direction.

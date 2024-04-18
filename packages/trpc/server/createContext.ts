@@ -1,111 +1,43 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { GetServerSidePropsContext, NextApiRequest, NextApiResponse } from "next";
 import type { Session } from "next-auth";
-import { serverSideTranslations } from "next-i18next/serverSideTranslations";
+import type { serverSideTranslations } from "next-i18next/serverSideTranslations";
 
-import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
-import { WEBAPP_URL } from "@calcom/lib/constants";
-import { defaultAvatarSrc } from "@calcom/lib/defaultAvatarImage";
-import { getLocaleFromHeaders } from "@calcom/lib/i18n";
-import prisma from "@calcom/prisma";
+import { getLocale } from "@calcom/features/auth/lib/getLocale";
+import getIP from "@calcom/lib/getIP";
+import prisma, { readonlyPrisma } from "@calcom/prisma";
+import type { SelectedCalendar, User as PrismaUser } from "@calcom/prisma/client";
 
-import type { Maybe } from "@trpc/server";
 import type { CreateNextContextOptions } from "@trpc/server/adapters/next";
 
-type CreateContextOptions = CreateNextContextOptions | GetServerSidePropsContext;
+type CreateContextOptions =
+  | (Omit<CreateNextContextOptions, "info"> & {
+      info?: CreateNextContextOptions["info"];
+    })
+  | GetServerSidePropsContext;
 
-async function getUserFromSession({
-  session,
-  req,
-}: {
-  session: Maybe<Session>;
-  req: CreateContextOptions["req"];
-}) {
-  if (!session?.user?.id) {
-    return null;
-  }
-
-  const user = await prisma.user.findUnique({
-    where: {
-      id: session.user.id,
-    },
-    select: {
-      id: true,
-      username: true,
-      name: true,
-      email: true,
-      bio: true,
-      timeZone: true,
-      weekStart: true,
-      startTime: true,
-      endTime: true,
-      defaultScheduleId: true,
-      bufferTime: true,
-      theme: true,
-      createdDate: true,
-      hideBranding: true,
-      avatar: true,
-      twoFactorEnabled: true,
-      disableImpersonation: true,
-      identityProvider: true,
-      brandColor: true,
-      darkBrandColor: true,
-      away: true,
-      credentials: {
-        select: {
-          id: true,
-          type: true,
-          key: true,
-          userId: true,
-          appId: true,
-          invalid: true,
-        },
-        orderBy: {
-          id: "asc",
-        },
-      },
-      selectedCalendars: {
-        select: {
-          externalId: true,
-          integration: true,
-        },
-      },
-      completedOnboarding: true,
-      destinationCalendar: true,
-      locale: true,
-      timeFormat: true,
-      trialEndsAt: true,
-      metadata: true,
-      role: true,
-    },
-  });
-
-  // some hacks to make sure `username` and `email` are never inferred as `null`
-  if (!user) {
-    return null;
-  }
-  const { email, username } = user;
-  if (!email) {
-    return null;
-  }
-  const rawAvatar = user.avatar;
-  // This helps to prevent reaching the 4MB payload limit by avoiding base64 and instead passing the avatar url
-  user.avatar = rawAvatar ? `${WEBAPP_URL}/${user.username}/avatar.png` : defaultAvatarSrc({ email });
-
-  const locale = user.locale || getLocaleFromHeaders(req);
-  return {
-    ...user,
-    rawAvatar,
-    email,
-    username,
-    locale,
-  };
-}
-
-type CreateInnerContextOptions = {
-  session: Session | null;
+export type CreateInnerContextOptions = {
+  sourceIp?: string;
+  session?: Session | null;
   locale: string;
-  user: Awaited<ReturnType<typeof getUserFromSession>>;
-  i18n: Awaited<ReturnType<typeof serverSideTranslations>>;
+  user?:
+    | Omit<
+        PrismaUser,
+        | "locale"
+        | "twoFactorSecret"
+        | "emailVerified"
+        | "password"
+        | "identityProviderId"
+        | "invitedTo"
+        | "allowDynamicBooking"
+        | "verified"
+      > & {
+        locale: Exclude<PrismaUser["locale"], null>;
+        credentials?: Credential[];
+        selectedCalendars?: Partial<SelectedCalendar>[];
+        rawAvatar?: string;
+      };
+  i18n?: Awaited<ReturnType<typeof serverSideTranslations>>;
 } & Partial<CreateContextOptions>;
 
 export type GetSessionFn =
@@ -115,23 +47,32 @@ export type GetSessionFn =
     }) => Promise<Session | null>)
   | (() => Promise<Session | null>);
 
-const DEFAULT_SESSION_GETTER: GetSessionFn = ({ req, res }) => getServerSession({ req, res });
+export type InnerContext = CreateInnerContextOptions & {
+  prisma: typeof prisma;
+  insightsDb: typeof readonlyPrisma;
+};
 
 /**
  * Inner context. Will always be available in your procedures, in contrast to the outer context.
  *
  * Also useful for:
  * - testing, so you don't have to mock Next.js' `req`/`res`
- * - tRPC's `createSSGHelpers` where we don't have `req`/`res`
+ * - tRPC's `createServerSideHelpers` where we don't have `req`/`res`
  *
  * @see https://trpc.io/docs/context#inner-and-outer-context
  */
-export async function createContextInner(opts: CreateInnerContextOptions) {
+export async function createContextInner(opts: CreateInnerContextOptions): Promise<InnerContext> {
   return {
     prisma,
+    insightsDb: readonlyPrisma,
     ...opts,
   };
 }
+
+type Context = InnerContext & {
+  req: CreateContextOptions["req"];
+  res: CreateContextOptions["res"];
+};
 
 /**
  * Creates context for an incoming request
@@ -139,19 +80,25 @@ export async function createContextInner(opts: CreateInnerContextOptions) {
  */
 export const createContext = async (
   { req, res }: CreateContextOptions,
-  sessionGetter: GetSessionFn = DEFAULT_SESSION_GETTER
-) => {
-  // for API-response caching see https://trpc.io/docs/caching
-  const session = await sessionGetter({ req, res });
+  sessionGetter?: GetSessionFn
+): Promise<Context> => {
+  const locale = await getLocale(req);
 
-  const user = await getUserFromSession({ session, req });
-  const locale = user?.locale ?? getLocaleFromHeaders(req);
-  const i18n = await serverSideTranslations(locale, ["common", "vital"]);
-
-  const contextInner = await createContextInner({ session, i18n, locale, user });
+  // This type may not be accurate if this request is coming from SSG init but they both should satisfy the requirements of getIP.
+  // TODO: @sean - figure out a way to make getIP be happy with trpc req. params
+  const sourceIp = getIP(req as NextApiRequest);
+  const session = !!sessionGetter ? await sessionGetter({ req, res }) : null;
+  const contextInner = await createContextInner({ locale, session, sourceIp });
   return {
     ...contextInner,
     req,
     res,
   };
 };
+
+export type TRPCContext = Awaited<ReturnType<typeof createContext>>;
+export type TRPCContextInner = Awaited<ReturnType<typeof createContextInner>>;
+export type WithLocale<T extends TRPCContext = any> = T &
+  Required<Pick<CreateInnerContextOptions, "i18n" | "locale">>;
+export type WithSession<T extends TRPCContext = any> = T &
+  Required<Pick<CreateInnerContextOptions, "session">>;

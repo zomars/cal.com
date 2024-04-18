@@ -1,4 +1,5 @@
 import type { Calendar as OfficeCalendar, User } from "@microsoft/microsoft-graph-types-beta";
+import type { DefaultBodyType } from "msw";
 import { z } from "zod";
 
 import dayjs from "@calcom/dayjs";
@@ -16,6 +17,9 @@ import type {
 } from "@calcom/types/Calendar";
 import type { CredentialPayload } from "@calcom/types/Credential";
 
+import type { ParseRefreshTokenResponse } from "../../_utils/oauth/parseRefreshTokenResponse";
+import parseRefreshTokenResponse from "../../_utils/oauth/parseRefreshTokenResponse";
+import refreshOAuthTokens from "../../_utils/oauth/refreshOAuthTokens";
 import type { O365AuthCredentials } from "../types/Office365Calendar";
 import { getOfficeAppKeys } from "./getOfficeAppKeys";
 
@@ -32,11 +36,17 @@ interface ISettledResponse {
     "Retry-After": string;
     "Content-Type": string;
   };
-  body: Record<string, any>;
+  body: Record<string, DefaultBodyType>;
 }
 
 interface IBatchResponse {
   responses: ISettledResponse[];
+}
+interface BodyValue {
+  showAs: string;
+  end: { dateTime: string };
+  evt: { showAs: string };
+  start: { dateTime: string };
 }
 
 const refreshTokenResponseSchema = z.object({
@@ -54,18 +64,23 @@ export default class Office365CalendarService implements Calendar {
   private accessToken: string | null = null;
   auth: { getToken: () => Promise<string> };
   private apiGraphUrl = "https://graph.microsoft.com/v1.0";
+  private credential: CredentialPayload;
 
   constructor(credential: CredentialPayload) {
     this.integrationName = "office365_calendar";
     this.auth = this.o365Auth(credential);
-
-    this.log = logger.getChildLogger({ prefix: [`[[lib] ${this.integrationName}`] });
+    this.credential = credential;
+    this.log = logger.getSubLogger({ prefix: [`[[lib] ${this.integrationName}`] });
   }
 
-  async createEvent(event: CalendarEvent): Promise<NewCalendarEventType> {
+  async createEvent(event: CalendarEvent, credentialId: number): Promise<NewCalendarEventType> {
+    const mainHostDestinationCalendar = event.destinationCalendar
+      ? event.destinationCalendar.find((cal) => cal.credentialId === credentialId) ??
+        event.destinationCalendar[0]
+      : undefined;
     try {
-      const eventsUrl = event.destinationCalendar?.externalId
-        ? `/me/calendars/${event.destinationCalendar?.externalId}/events`
+      const eventsUrl = mainHostDestinationCalendar?.externalId
+        ? `/me/calendars/${mainHostDestinationCalendar?.externalId}/events`
         : "/me/calendar/events";
 
       const response = await this.fetcher(eventsUrl, {
@@ -73,7 +88,9 @@ export default class Office365CalendarService implements Calendar {
         body: JSON.stringify(this.translateEvent(event)),
       });
 
-      return handleErrorsJson(response);
+      const responseJson = await handleErrorsJson<NewCalendarEventType & { iCalUId: string }>(response);
+
+      return { ...responseJson, iCalUID: responseJson.iCalUId };
     } catch (error) {
       this.log.error(error);
 
@@ -81,14 +98,16 @@ export default class Office365CalendarService implements Calendar {
     }
   }
 
-  async updateEvent(uid: string, event: CalendarEvent): Promise<any> {
+  async updateEvent(uid: string, event: CalendarEvent): Promise<NewCalendarEventType> {
     try {
       const response = await this.fetcher(`/me/calendar/events/${uid}`, {
         method: "PATCH",
         body: JSON.stringify(this.translateEvent(event)),
       });
 
-      return handleErrorsRaw(response);
+      const responseJson = await handleErrorsJson<NewCalendarEventType & { iCalUId: string }>(response);
+
+      return { ...responseJson, iCalUID: responseJson.iCalUId };
     } catch (error) {
       this.log.error(error);
 
@@ -122,6 +141,8 @@ export default class Office365CalendarService implements Calendar {
       dateFromParsed.toISOString()
     )}&endDateTime=${encodeURIComponent(dateToParsed.toISOString())}`;
 
+    const calendarSelectParams = "$select=showAs,start,end";
+
     try {
       const selectedCalendarIds = selectedCalendars
         .filter((e) => e.integration === this.integrationName)
@@ -138,7 +159,7 @@ export default class Office365CalendarService implements Calendar {
       const requests = ids.map((calendarId, id) => ({
         id,
         method: "GET",
-        url: `/me/calendars/${calendarId}/calendarView${filter}`,
+        url: `/me/calendars/${calendarId}/calendarView${filter}&${calendarSelectParams}`,
       }));
       const response = await this.apiGraphBatchCall(requests);
       const responseBody = await this.handleErrorJsonOffice365Calendar(response);
@@ -170,8 +191,10 @@ export default class Office365CalendarService implements Calendar {
     const officeCalendars: OfficeCalendar[] = [];
     // List calendars from MS are paginated
     let finishedParsingCalendars = false;
+    const calendarFilterParam = "$select=id,name,isDefaultCalendar,canEdit";
+
     // Store @odata.nextLink if in response
-    let requestLink = "/me/calendars";
+    let requestLink = `/me/calendars?${calendarFilterParam}`;
 
     while (!finishedParsingCalendars) {
       const response = await this.fetcher(requestLink);
@@ -219,20 +242,28 @@ export default class Office365CalendarService implements Calendar {
     };
     const o365AuthCredentials = credential.key as O365AuthCredentials;
 
-    const refreshAccessToken = async (refreshToken: string) => {
+    const refreshAccessToken = async (o365AuthCredentials: O365AuthCredentials) => {
       const { client_id, client_secret } = await getOfficeAppKeys();
-      const response = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          scope: "User.Read Calendars.Read Calendars.ReadWrite",
-          client_id,
-          refresh_token: refreshToken,
-          grant_type: "refresh_token",
-          client_secret,
-        }),
-      });
-      const o365AuthCredentials = refreshTokenResponseSchema.parse(await handleErrorsJson(response));
+      const response = await refreshOAuthTokens(
+        async () =>
+          await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              scope: "User.Read Calendars.Read Calendars.ReadWrite",
+              client_id,
+              refresh_token: o365AuthCredentials.refresh_token,
+              grant_type: "refresh_token",
+              client_secret,
+            }),
+          }),
+        "office365-calendar",
+        credential.userId
+      );
+      const responseJson = await handleErrorsJson(response);
+      const tokenResponse: ParseRefreshTokenResponse<typeof refreshTokenResponseSchema> =
+        parseRefreshTokenResponse(responseJson, refreshTokenResponseSchema);
+      o365AuthCredentials = { ...o365AuthCredentials, ...tokenResponse };
       await prisma.credential.update({
         where: {
           id: credential.id,
@@ -246,14 +277,14 @@ export default class Office365CalendarService implements Calendar {
 
     return {
       getToken: () =>
+        refreshTokenResponseSchema.safeParse(o365AuthCredentials).success &&
         !isExpired(o365AuthCredentials.expires_in)
           ? Promise.resolve(o365AuthCredentials.access_token)
-          : refreshAccessToken(o365AuthCredentials.refresh_token),
+          : refreshAccessToken(o365AuthCredentials),
     };
   };
 
   private translateEvent = (event: CalendarEvent) => {
-    const utcOffset = dayjs(event.startTime).tz(event.organizer.timeZone).utcOffset() / 60;
     return {
       subject: event.title,
       body: {
@@ -261,20 +292,48 @@ export default class Office365CalendarService implements Calendar {
         content: getRichDescription(event),
       },
       start: {
-        dateTime: dayjs(event.startTime).utcOffset(utcOffset).format(),
+        dateTime: dayjs(event.startTime).tz(event.organizer.timeZone).format("YYYY-MM-DDTHH:mm:ss"),
         timeZone: event.organizer.timeZone,
       },
       end: {
-        dateTime: dayjs(event.endTime).utcOffset(utcOffset).format(),
+        dateTime: dayjs(event.endTime).tz(event.organizer.timeZone).format("YYYY-MM-DDTHH:mm:ss"),
         timeZone: event.organizer.timeZone,
       },
-      attendees: event.attendees.map((attendee) => ({
-        emailAddress: {
-          address: attendee.email,
-          name: attendee.name,
+      attendees: [
+        // Add the calEvent organizer
+        {
+          emailAddress: {
+            address: event.destinationCalendar
+              ? event.destinationCalendar.find((cal) => cal.userId === event.organizer.id)?.externalId ??
+                event.organizer.email
+              : event.organizer.email,
+            name: event.organizer.name,
+          },
         },
-        type: "required",
-      })),
+        ...event.attendees.map((attendee) => ({
+          emailAddress: {
+            address: attendee.email,
+            name: attendee.name,
+          },
+          type: "required",
+        })),
+        ...(event.team?.members
+          ? event.team?.members
+              .filter((member) => member.email !== this.credential.user?.email)
+              .map((member) => {
+                const destinationCalendar =
+                  event.destinationCalendar &&
+                  event.destinationCalendar.find((cal) => cal.userId === member.id);
+                return {
+                  emailAddress: {
+                    address: destinationCalendar?.externalId ?? member.email,
+                    name: member.name,
+                  },
+                  type: "required",
+                };
+              })
+          : []),
+      ],
       location: event.location ? { displayName: getLocation(event) } : undefined,
     };
   };
@@ -284,7 +343,7 @@ export default class Office365CalendarService implements Calendar {
     return fetch(`${this.apiGraphUrl}${endpoint}`, {
       method: "get",
       headers: {
-        Authorization: "Bearer " + this.accessToken,
+        Authorization: `Bearer ${this.accessToken}`,
         "Content-Type": "application/json",
       },
       ...init,
@@ -301,7 +360,7 @@ export default class Office365CalendarService implements Calendar {
         alreadySuccess.push(response);
       } else {
         const nextLinkUrl = response.body["@odata.nextLink"]
-          ? response.body["@odata.nextLink"].replace(this.apiGraphUrl, "")
+          ? String(response.body["@odata.nextLink"]).replace(this.apiGraphUrl, "")
           : "";
         if (nextLinkUrl) {
           // Saving link for later use
@@ -381,16 +440,12 @@ export default class Office365CalendarService implements Calendar {
   };
 
   private apiGraphBatchCall = async (requests: IRequest[]): Promise<Response> => {
-    try {
-      const response = await this.fetcher(`/$batch`, {
-        method: "POST",
-        body: JSON.stringify({ requests }),
-      });
+    const response = await this.fetcher(`/$batch`, {
+      method: "POST",
+      body: JSON.stringify({ requests }),
+    });
 
-      return response;
-    } catch (error: any) {
-      throw new Error(error);
-    }
+    return response;
   };
 
   private handleTextJsonResponseWithHtmlInBody = (response: string): IBatchResponse => {
@@ -418,15 +473,16 @@ export default class Office365CalendarService implements Calendar {
 
   private processBusyTimes = (responses: ISettledResponse[]) => {
     return responses.reduce(
-      (acc: BufferedBusyTime[], subResponse: { body: { value?: any[]; error?: any[] } }) => {
+      (acc: BufferedBusyTime[], subResponse: { body: { value?: BodyValue[]; error?: Error[] } }) => {
         if (!subResponse.body?.value) return acc;
         return acc.concat(
-          subResponse.body.value
-            .filter((evt) => evt.showAs !== "free" && evt.showAs !== "workingElsewhere")
-            .map((evt) => ({
-              start: evt.start.dateTime + "Z",
-              end: evt.end.dateTime + "Z",
-            }))
+          subResponse.body.value.reduce((acc: BufferedBusyTime[], evt: BodyValue) => {
+            if (evt.showAs === "free" || evt.showAs === "workingElsewhere") return acc;
+            return acc.concat({
+              start: `${evt.start.dateTime}Z`,
+              end: `${evt.end.dateTime}Z`,
+            });
+          }, [])
         );
       },
       []

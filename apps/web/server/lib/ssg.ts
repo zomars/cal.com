@@ -1,11 +1,14 @@
 import type { GetStaticPropsContext } from "next";
-import { i18n } from "next-i18next.config";
 import { serverSideTranslations } from "next-i18next/serverSideTranslations";
 import superjson from "superjson";
 
-import prisma from "@calcom/prisma";
-import { createProxySSGHelpers } from "@calcom/trpc/react/ssg";
+import { CALCOM_VERSION } from "@calcom/lib/constants";
+import prisma, { readonlyPrisma } from "@calcom/prisma";
+import { createServerSideHelpers } from "@calcom/trpc/react/server";
 import { appRouter } from "@calcom/trpc/server/routers/_app";
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { i18n } = require("@calcom/config/next-i18next.config");
 
 /**
  * Initialize static site rendering tRPC helpers.
@@ -23,20 +26,26 @@ export async function ssgInit<TParams extends { locale?: string }>(opts: GetStat
 
   const _i18n = await serverSideTranslations(locale, ["common"]);
 
-  const ssg = createProxySSGHelpers({
+  const ssg = createServerSideHelpers({
     router: appRouter,
     transformer: superjson,
     ctx: {
       prisma,
+      insightsDb: readonlyPrisma,
       session: null,
-      user: null,
       locale,
       i18n: _i18n,
     },
   });
 
-  // always preload i18n
-  await ssg.viewer.public.i18n.fetch();
+  // i18n translations are already retrieved from serverSideTranslations call, there is no need to run a i18n.fetch
+  // we can set query data directly to the queryClient
+  const queryKey = [
+    ["viewer", "public", "i18n"],
+    { input: { locale, CalComVersion: CALCOM_VERSION }, type: "query" },
+  ];
+
+  ssg.queryClient.setQueryData(queryKey, { i18n: _i18n });
 
   return ssg;
 }

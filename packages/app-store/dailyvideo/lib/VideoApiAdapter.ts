@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { handleErrorsJson } from "@calcom/lib/errors";
+import { prisma } from "@calcom/prisma";
 import type { GetRecordingsResponseSchema, GetAccessLinkResponseSchema } from "@calcom/prisma/zod-utils";
 import { getRecordingsResponseSchema, getAccessLinkResponseSchema } from "@calcom/prisma/zod-utils";
 import type { CalendarEvent } from "@calcom/types/Calendar";
@@ -29,9 +30,29 @@ const dailyReturnTypeSchema = z.object({
     enable_chat: z.boolean(),
     enable_knocking: z.boolean(),
     enable_prejoin_ui: z.boolean(),
-    enable_new_call_ui: z.boolean(),
+    enable_transcription_storage: z.boolean(),
   }),
 });
+
+const getTranscripts = z.object({
+  total_count: z.number(),
+  data: z.array(
+    z.object({
+      transcriptId: z.string(),
+      domainId: z.string(),
+      roomId: z.string(),
+      mtgSessionId: z.string(),
+      duration: z.number(),
+      status: z.string(),
+    })
+  ),
+});
+
+const getRooms = z
+  .object({
+    id: z.string(),
+  })
+  .passthrough();
 
 export interface DailyEventResult {
   id: string;
@@ -56,12 +77,14 @@ const meetingTokenSchema = z.object({
 
 /** @deprecated use metadata on index file */
 export const FAKE_DAILY_CREDENTIAL: CredentialPayload & { invalid: boolean } = {
-  id: +new Date().getTime(),
+  id: 0,
   type: "daily_video",
   key: { apikey: process.env.DAILY_API_KEY },
-  userId: +new Date().getTime(),
+  userId: 0,
+  user: { email: "" },
   appId: "daily-video",
   invalid: false,
+  teamId: null,
 };
 
 export const fetcher = async (endpoint: string, init?: RequestInit | undefined) => {
@@ -69,7 +92,7 @@ export const fetcher = async (endpoint: string, init?: RequestInit | undefined) 
   return fetch(`https://api.daily.co/v1${endpoint}`, {
     method: "GET",
     headers: {
-      Authorization: "Bearer " + api_key,
+      Authorization: `Bearer ${api_key}`,
       "Content-Type": "application/json",
       ...init?.headers,
     },
@@ -77,11 +100,38 @@ export const fetcher = async (endpoint: string, init?: RequestInit | undefined) 
   }).then(handleErrorsJson);
 };
 
-function postToDailyAPI(endpoint: string, body: Record<string, any>) {
+function postToDailyAPI(endpoint: string, body: Record<string, unknown>) {
   return fetcher(endpoint, {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+async function processTranscriptsInBatches(transcriptIds: Array<string>) {
+  const batchSize = 5; // Batch size
+  const batches = []; // Array to hold batches of transcript IDs
+
+  // Split transcript IDs into batches
+  for (let i = 0; i < transcriptIds.length; i += batchSize) {
+    batches.push(transcriptIds.slice(i, i + batchSize));
+  }
+
+  const allTranscriptsAccessLinks = []; // Array to hold all access links
+
+  // Process each batch sequentially
+  for (const batch of batches) {
+    const batchPromises = batch.map((id) =>
+      fetcher(`/transcript/${id}/access-link`)
+        .then(z.object({ link: z.string() }).parse)
+        .then((res) => res.link)
+    );
+
+    const accessLinks = await Promise.all(batchPromises);
+
+    allTranscriptsAccessLinks.push(...accessLinks);
+  }
+
+  return allTranscriptsAccessLinks;
 }
 
 const DailyVideoApiAdapter = (): VideoApiAdapter => {
@@ -92,7 +142,7 @@ const DailyVideoApiAdapter = (): VideoApiAdapter => {
     const body = await translateEvent(event);
     const dailyEvent = await postToDailyAPI(endpoint, body).then(dailyReturnTypeSchema.parse);
     const meetingToken = await postToDailyAPI("/meeting-tokens", {
-      properties: { room_name: dailyEvent.name, is_owner: true },
+      properties: { room_name: dailyEvent.name, exp: dailyEvent.config.exp, is_owner: true },
     }).then(meetingTokenSchema.parse);
 
     return Promise.resolve({
@@ -105,36 +155,78 @@ const DailyVideoApiAdapter = (): VideoApiAdapter => {
 
   const translateEvent = async (event: CalendarEvent) => {
     // Documentation at: https://docs.daily.co/reference#list-rooms
-    // added a 1 hour buffer for room expiration
-    const exp = Math.round(new Date(event.endTime).getTime() / 1000) + 60 * 60;
+    // Adds 14 days from the end of the booking as the expiration date
+    const exp = Math.round(new Date(event.endTime).getTime() / 1000) + 60 * 60 * 24 * 14;
     const { scale_plan: scalePlan } = await getDailyAppKeys();
-
-    if (scalePlan === "true") {
-      return {
-        privacy: "public",
-        properties: {
-          enable_new_call_ui: true,
-          enable_prejoin_ui: true,
-          enable_knocking: true,
-          enable_screenshare: true,
-          enable_chat: true,
-          exp: exp,
-          enable_recording: "cloud",
+    const hasTeamPlan = await prisma.membership.findFirst({
+      where: {
+        userId: event.organizer.id,
+        team: {
+          slug: {
+            not: null,
+          },
         },
-      };
-    }
+      },
+    });
+
+    // Check if organizer has subscribed to Cal.ai
+
+    const isCalAiSubscribed = await prisma.credential.findMany({
+      where: {
+        userId: event.organizer.id,
+        type: "cal-ai_automation",
+        invalid: false,
+        paymentStatus: "active",
+      },
+    });
+
     return {
       privacy: "public",
       properties: {
-        enable_new_call_ui: true,
         enable_prejoin_ui: true,
         enable_knocking: true,
         enable_screenshare: true,
         enable_chat: true,
         exp: exp,
+        enable_recording: scalePlan === "true" && !!hasTeamPlan === true ? "cloud" : undefined,
+        enable_transcription_storage: !!isCalAiSubscribed,
+        permissions: {
+          canAdmin: ["transcription"],
+        },
       },
     };
   };
+
+  async function createInstantMeeting(endTime: string) {
+    // added a 1 hour buffer for room expiration
+    const exp = Math.round(new Date(endTime).getTime() / 1000) + 60 * 60;
+
+    const body = {
+      privacy: "public",
+      properties: {
+        enable_prejoin_ui: true,
+        enable_knocking: true,
+        enable_screenshare: true,
+        enable_chat: true,
+        exp: exp,
+        enable_recording: "cloud",
+        start_video_off: true,
+        enable_transcription_storage: true,
+      },
+    };
+
+    const dailyEvent = await postToDailyAPI("/rooms", body).then(dailyReturnTypeSchema.parse);
+    const meetingToken = await postToDailyAPI("/meeting-tokens", {
+      properties: { room_name: dailyEvent.name, exp: dailyEvent.config.exp, is_owner: true },
+    }).then(meetingTokenSchema.parse);
+
+    return Promise.resolve({
+      type: "daily_video",
+      id: dailyEvent.name,
+      password: meetingToken.token,
+      url: dailyEvent.url,
+    });
+  }
 
   return {
     /** Daily doesn't need to return busy times, so we return empty */
@@ -159,15 +251,34 @@ const DailyVideoApiAdapter = (): VideoApiAdapter => {
         throw new Error("Something went wrong! Unable to get recording");
       }
     },
+    createInstantCalVideoRoom: (endTime: string) => createInstantMeeting(endTime),
     getRecordingDownloadLink: async (recordingId: string): Promise<GetAccessLinkResponseSchema> => {
       try {
-        const res = await fetcher(`/recordings/${recordingId}/access-link`).then(
+        const res = await fetcher(`/recordings/${recordingId}/access-link?valid_for_secs=43200`).then(
           getAccessLinkResponseSchema.parse
         );
         return Promise.resolve(res);
       } catch (err) {
         console.log("err", err);
         throw new Error("Something went wrong! Unable to get recording access link");
+      }
+    },
+    getAllTranscriptsAccessLinkFromRoomName: async (roomName: string): Promise<Array<string>> => {
+      try {
+        const res = await fetcher(`/rooms/${roomName}`).then(getRooms.parse);
+        const roomId = res.id;
+        const allTranscripts = await fetcher(`/transcript?roomId=${roomId}`).then(getTranscripts.parse);
+
+        const allTranscriptsIds = allTranscripts.data.map((transcript) => transcript.transcriptId);
+
+        const allTranscriptsAccessLink = await processTranscriptsInBatches(allTranscriptsIds);
+
+        const accessLinks = await Promise.all(allTranscriptsAccessLink);
+
+        return Promise.resolve(accessLinks);
+      } catch (err) {
+        console.log("err", err);
+        throw new Error("Something went wrong! Unable to get transcription access link");
       }
     },
   };

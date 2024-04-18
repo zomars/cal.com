@@ -1,13 +1,13 @@
-import { BookingStatus } from "@prisma/client";
 import type { GetServerSidePropsContext } from "next";
 import { z } from "zod";
 
-import type { StripePaymentData } from "@calcom/app-store/stripepayment/lib/server";
+import { getClientSecretFromPayment } from "@calcom/features/ee/payments/pages/getClientSecretFromPayment";
 import prisma from "@calcom/prisma";
+import { BookingStatus } from "@calcom/prisma/enums";
 import { EventTypeMetaDataSchema } from "@calcom/prisma/zod-utils";
 import type { inferSSRProps } from "@calcom/types/inferSSRProps";
 
-import { ssrInit } from "@server/lib/ssr";
+import { ssrInit } from "../../../../../apps/web/server/lib/ssr";
 
 export type PaymentPageProps = inferSSRProps<typeof getServerSideProps>;
 
@@ -30,6 +30,9 @@ export const getServerSideProps = async (context: GetServerSidePropsContext) => 
       refunded: true,
       bookingId: true,
       appId: true,
+      amount: true,
+      currency: true,
+      paymentOption: true,
       booking: {
         select: {
           id: true,
@@ -37,6 +40,7 @@ export const getServerSideProps = async (context: GetServerSidePropsContext) => 
           description: true,
           title: true,
           startTime: true,
+          endTime: true,
           attendees: {
             select: {
               email: true,
@@ -74,6 +78,7 @@ export const getServerSideProps = async (context: GetServerSidePropsContext) => 
               },
               price: true,
               currency: true,
+              successRedirectUrl: true,
             },
           },
         },
@@ -81,27 +86,31 @@ export const getServerSideProps = async (context: GetServerSidePropsContext) => 
     },
   });
 
-  if (!rawPayment) return { notFound: true };
+  if (!rawPayment) return { notFound: true } as const;
 
   const { data, booking: _booking, ...restPayment } = rawPayment;
+
   const payment = {
     ...restPayment,
-    data: data as unknown as StripePaymentData,
+    data: data as Record<string, unknown>,
   };
 
-  if (!_booking) return { notFound: true };
+  if (!_booking) return { notFound: true } as const;
 
-  const { startTime, eventType, ...restBooking } = _booking;
+  const { startTime, endTime, eventType, ...restBooking } = _booking;
   const booking = {
     ...restBooking,
     startTime: startTime.toString(),
+    endTime: endTime.toString(),
   };
 
-  if (!eventType) return { notFound: true };
+  if (!eventType) return { notFound: true } as const;
 
-  const [user] = eventType.users;
-  if (!user) return { notFound: true };
+  if (eventType.users.length === 0 && !!!eventType.team) return { notFound: true } as const;
 
+  const [user] = eventType?.users.length
+    ? eventType.users
+    : [{ name: null, theme: null, hideBranding: null, username: null }];
   const profile = {
     name: eventType.team?.name || user?.name || null,
     theme: (!eventType.team?.name && user?.theme) || null,
@@ -131,6 +140,7 @@ export const getServerSideProps = async (context: GetServerSidePropsContext) => 
       booking,
       trpcState: ssr.dehydrate(),
       payment,
+      clientSecret: getClientSecretFromPayment(payment),
       profile,
     },
   };

@@ -3,13 +3,12 @@ import classNames from "classnames";
 import { signIn } from "next-auth/react";
 import React from "react";
 import { Controller, FormProvider, useForm } from "react-hook-form";
-import * as z from "zod";
+import { z } from "zod";
 
 import { isPasswordValid } from "@calcom/features/auth/lib/isPasswordValid";
 import { WEBSITE_URL } from "@calcom/lib/constants";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { EmailField, EmptyScreen, Label, PasswordField, TextField } from "@calcom/ui";
-import { FiUserCheck } from "@calcom/ui/components/icon";
 
 export const AdminUserContainer = (props: React.ComponentProps<typeof AdminUser> & { userCount: number }) => {
   const { t } = useLocale();
@@ -24,7 +23,7 @@ export const AdminUserContainer = (props: React.ComponentProps<typeof AdminUser>
           props.onSuccess();
         }}>
         <EmptyScreen
-          Icon={FiUserCheck}
+          Icon="user-check"
           headline={t("admin_user_created")}
           description={t("admin_user_created_description")}
         />
@@ -57,12 +56,10 @@ export const AdminUser = (props: { onSubmit: () => void; onError: () => void; on
     }),
   });
 
-  const formMethods = useForm<{
-    username: string;
-    email_address: string;
-    full_name: string;
-    password: string;
-  }>({
+  type formSchemaType = z.infer<typeof formSchema>;
+
+  const formMethods = useForm<formSchemaType>({
+    mode: "onChange",
     resolver: zodResolver(formSchema),
   });
 
@@ -70,7 +67,7 @@ export const AdminUser = (props: { onSubmit: () => void; onError: () => void; on
     props.onError();
   };
 
-  const onSubmit = formMethods.handleSubmit(async (data: z.infer<typeof formSchema>) => {
+  const onSubmit = formMethods.handleSubmit(async (data) => {
     props.onSubmit();
     const response = await fetch("/api/auth/setup", {
       method: "POST",
@@ -111,7 +108,7 @@ export const AdminUser = (props: { onSubmit: () => void; onError: () => void; on
                 <Label htmlFor="username" className={classNames(longWebsiteUrl && "mb-0")}>
                   <span className="block">{t("username")}</span>
                   {longWebsiteUrl && (
-                    <small className="items-centerpx-3 mt-2 inline-flex rounded-t-md border border-b-0 border-gray-300 bg-gray-100 py-1 px-3 text-gray-500">
+                    <small className="items-centerpx-3 bg-subtle border-default text-subtle mt-2 inline-flex rounded-t-md border border-b-0 px-3 py-1">
                       {process.env.NEXT_PUBLIC_WEBSITE_URL}
                     </small>
                   )}
@@ -119,7 +116,7 @@ export const AdminUser = (props: { onSubmit: () => void; onError: () => void; on
                 <TextField
                   addOnLeading={
                     !longWebsiteUrl && (
-                      <span className="inline-flex items-center rounded-none px-3 text-sm text-gray-500">
+                      <span className="text-subtle inline-flex items-center rounded-none px-3 text-sm">
                         {process.env.NEXT_PUBLIC_WEBSITE_URL}/
                       </span>
                     )
@@ -130,11 +127,7 @@ export const AdminUser = (props: { onSubmit: () => void; onError: () => void; on
                   className={classNames("my-0", longWebsiteUrl && "rounded-t-none")}
                   onBlur={onBlur}
                   name="username"
-                  onChange={async (e) => {
-                    onChange(e.target.value);
-                    formMethods.setValue("username", e.target.value);
-                    await formMethods.trigger("username");
-                  }}
+                  onChange={(e) => onChange(e.target.value)}
                 />
               </>
             )}
@@ -148,11 +141,7 @@ export const AdminUser = (props: { onSubmit: () => void; onError: () => void; on
               <TextField
                 value={value || ""}
                 onBlur={onBlur}
-                onChange={async (e) => {
-                  onChange(e.target.value);
-                  formMethods.setValue("full_name", e.target.value);
-                  await formMethods.trigger("full_name");
-                }}
+                onChange={(e) => onChange(e.target.value)}
                 color={formMethods.formState.errors.full_name ? "warn" : ""}
                 type="text"
                 name="full_name"
@@ -172,11 +161,7 @@ export const AdminUser = (props: { onSubmit: () => void; onError: () => void; on
               <EmailField
                 value={value || ""}
                 onBlur={onBlur}
-                onChange={async (e) => {
-                  onChange(e.target.value);
-                  formMethods.setValue("email_address", e.target.value);
-                  await formMethods.trigger("email_address");
-                }}
+                onChange={(e) => onChange(e.target.value)}
                 className="my-0"
                 name="email_address"
               />
@@ -191,11 +176,7 @@ export const AdminUser = (props: { onSubmit: () => void; onError: () => void; on
               <PasswordField
                 value={value || ""}
                 onBlur={onBlur}
-                onChange={async (e) => {
-                  onChange(e.target.value);
-                  formMethods.setValue("password", e.target.value);
-                  await formMethods.trigger("password");
-                }}
+                onChange={(e) => onChange(e.target.value)}
                 hintErrors={["caplow", "admin_min", "num"]}
                 name="password"
                 className="my-0"

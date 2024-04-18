@@ -1,5 +1,8 @@
-/* eslint-disable prefer-const */
+"use client";
+
 import { useEffect, useRef } from "react";
+
+import type { PrefillAndIframeAttrsConfig } from "@calcom/embed-core";
 
 import useEmbed from "./useEmbed";
 
@@ -10,12 +13,13 @@ type CalProps = {
     debug?: boolean;
     uiDebug?: boolean;
   };
-  config?: any;
+  namespace?: string;
+  config?: PrefillAndIframeAttrsConfig;
   embedJsUrl?: string;
 } & React.HTMLAttributes<HTMLDivElement>;
 
 const Cal = function Cal(props: CalProps) {
-  const { calLink, calOrigin, config, initConfig = {}, embedJsUrl, ...restProps } = props;
+  const { calLink, calOrigin, namespace = "", config, initConfig = {}, embedJsUrl, ...restProps } = props;
   if (!calLink) {
     throw new Error("calLink is required");
   }
@@ -23,21 +27,33 @@ const Cal = function Cal(props: CalProps) {
   const Cal = useEmbed(embedJsUrl);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!Cal || initializedRef.current) {
+    if (!Cal || initializedRef.current || !ref.current) {
       return;
     }
     initializedRef.current = true;
     const element = ref.current;
-    Cal("init", {
-      ...initConfig,
-      origin: calOrigin,
-    });
-    Cal("inline", {
-      elementOrSelector: element,
-      calLink,
-      config,
-    });
-  }, [Cal, calLink, config, calOrigin, initConfig]);
+    if (namespace) {
+      Cal("init", namespace, {
+        ...initConfig,
+        origin: calOrigin,
+      });
+      Cal.ns[namespace]("inline", {
+        elementOrSelector: element,
+        calLink,
+        config,
+      });
+    } else {
+      Cal("init", {
+        ...initConfig,
+        origin: calOrigin,
+      });
+      Cal("inline", {
+        elementOrSelector: element,
+        calLink,
+        config,
+      });
+    }
+  }, [Cal, calLink, config, namespace, calOrigin, initConfig]);
 
   if (!Cal) {
     return null;

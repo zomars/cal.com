@@ -1,36 +1,42 @@
-import type { GetStaticPaths, InferGetStaticPropsType } from "next";
+"use client";
+
+import type { InferGetServerSidePropsType } from "next";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 
 import { AppSetupPage } from "@calcom/app-store/_pages/setup";
-import { getStaticProps } from "@calcom/app-store/_pages/setup/_getStaticProps";
+import { getServerSideProps } from "@calcom/app-store/_pages/setup/_getServerSideProps";
+import { useCompatSearchParams } from "@calcom/lib/hooks/useCompatSearchParams";
+import { HeadSeo } from "@calcom/ui";
 
-export default function SetupInformation(props: InferGetStaticPropsType<typeof getStaticProps>) {
+import PageWrapper from "@components/PageWrapper";
+
+export default function SetupInformation(props: InferGetServerSidePropsType<typeof getServerSideProps>) {
+  const searchParams = useCompatSearchParams();
   const router = useRouter();
-  const slug = router.query.slug as string;
+  const slug = searchParams?.get("slug") as string;
   const { status } = useSession();
 
   if (status === "loading") {
-    return <div className="absolute z-50 flex h-screen w-full items-center bg-gray-200" />;
+    return <div className="bg-emphasis absolute z-50 flex h-screen w-full items-center" />;
   }
 
   if (status === "unauthenticated") {
-    router.replace({
-      pathname: "/auth/login",
-      query: {
-        callbackUrl: `/apps/${slug}/setup`,
-      },
+    const urlSearchParams = new URLSearchParams({
+      callbackUrl: `/apps/${slug}/setup`,
     });
+    router.replace(`/auth/login?${urlSearchParams.toString()}`);
   }
 
-  return <AppSetupPage slug={slug} {...props} />;
+  return (
+    <>
+      {/* So that the set up page does not get indexed by search engines */}
+      <HeadSeo nextSeoProps={{ noindex: true, nofollow: true }} title={`${slug} | Cal.com`} description="" />
+      <AppSetupPage slug={slug} {...props} />
+    </>
+  );
 }
 
-export const getStaticPaths: GetStaticPaths = async () => {
-  return {
-    paths: [],
-    fallback: "blocking",
-  };
-};
+SetupInformation.PageWrapper = PageWrapper;
 
-export { getStaticProps };
+export { getServerSideProps };

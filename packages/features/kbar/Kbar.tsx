@@ -1,3 +1,4 @@
+import type { Action } from "kbar";
 import {
   KBarAnimator,
   KBarPortal,
@@ -9,8 +10,7 @@ import {
   useMatches,
   useRegisterActions,
 } from "kbar";
-import type { Action } from "kbar";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 
 import { appStoreMetadata } from "@calcom/app-store/appStoreMetaData";
@@ -18,8 +18,7 @@ import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { isMac } from "@calcom/lib/isMac";
 import type { RouterOutputs } from "@calcom/trpc/react";
 import { trpc } from "@calcom/trpc/react";
-import { Tooltip } from "@calcom/ui";
-import { FiSearch, FiArrowUp, FiArrowDown, FiCornerDownLeft, FiCommand } from "@calcom/ui/components/icon";
+import { Icon, Tooltip } from "@calcom/ui";
 
 type shortcutArrayType = {
   shortcuts?: string[];
@@ -240,26 +239,26 @@ export const KBarContent = () => {
   return (
     <KBarPortal>
       <KBarPositioner>
-        <KBarAnimator className="z-10 w-full max-w-screen-sm overflow-hidden rounded-md bg-white shadow-lg">
-          <div className="flex items-center justify-center border-b">
-            <FiSearch className="mx-3 h-4 w-4 text-gray-500" />
+        <KBarAnimator className="bg-default z-10 w-full max-w-screen-sm overflow-hidden rounded-md shadow-lg">
+          <div className="border-subtle flex items-center justify-center border-b">
+            <Icon name="search" className="text-default mx-3 h-4 w-4" />
             <KBarSearch
               defaultPlaceholder={t("kbar_search_placeholder")}
-              className="w-full rounded-sm py-2.5 focus-visible:outline-none"
+              className="bg-default placeholder:text-subtle text-default w-full rounded-sm py-2.5 focus-visible:outline-none"
             />
           </div>
           <RenderResults />
-          <div className="hidden items-center space-x-1 border-t px-2 py-1.5 text-xs text-gray-500 sm:flex">
-            <FiArrowUp className="h-4 w-4" />
-            <FiArrowDown className="h-4 w-4" /> <span className="pr-2">{t("navigate")}</span>
-            <FiCornerDownLeft className="h-4 w-4" />
+          <div className="text-subtle border-subtle hidden items-center space-x-1 border-t px-2 py-1.5 text-xs sm:flex">
+            <Icon name="arrow-up" className="h-4 w-4" />
+            <Icon name="arrow-down" className="h-4 w-4" /> <span className="pr-2">{t("navigate")}</span>
+            <Icon name="corner-down-left" className="h-4 w-4" />
             <span className="pr-2">{t("open")}</span>
-            {isMac ? <FiCommand className="h-3 w-3" /> : "CTRL"}
+            {isMac ? <Icon name="command" className="h-3 w-3" /> : "CTRL"}
             <span className="pr-1">+ K </span>
             <span className="pr-2">{t("close")}</span>
           </div>
         </KBarAnimator>
-        <div className="z-1 fixed inset-0 bg-gray-600 bg-opacity-75" />
+        <div className="z-1 fixed inset-0 bg-neutral-800 bg-opacity-70" />
       </KBarPositioner>
     </KBarPortal>
   );
@@ -273,8 +272,8 @@ export const KBarTrigger = () => {
         <button
           color="minimal"
           onClick={query.toggle}
-          className="group flex rounded-md py-2 px-3 text-sm font-medium hover:bg-gray-100 lg:p-1 lg:hover:bg-gray-200 lg:hover:text-gray-900">
-          <FiSearch className="h-4 w-4 flex-shrink-0 text-inherit" />
+          className="text-default hover:bg-subtle todesktop:hover:!bg-transparent lg:hover:bg-emphasis lg:hover:text-emphasis group flex rounded-md px-3 py-2 text-sm font-medium transition lg:px-2">
+          <Icon name="search" className="h-4 w-4 flex-shrink-0 text-inherit" />
         </button>
       </Tooltip>
     </>
@@ -288,7 +287,9 @@ const DisplayShortcuts = (item: shortcutArrayType) => {
     <span className="space-x-1">
       {shortcuts?.map((shortcut) => {
         return (
-          <kbd key={shortcut} className="rounded-sm border bg-white px-2 py-1 text-black hover:bg-gray-100">
+          <kbd
+            key={shortcut}
+            className="bg-default hover:bg-subtle text-emphasis rounded-sm border px-2 py-1">
             {shortcut}
           </kbd>
         );
@@ -306,13 +307,14 @@ function RenderResults() {
       items={results}
       onRender={({ item, active }) =>
         typeof item === "string" ? (
-          <div className="bg-white p-4 text-xs uppercase text-gray-500">{t(item)}</div>
+          <div className="bg-default text-emphasis p-4 text-xs font-bold uppercase">{t(item)}</div>
         ) : (
           <div
             // For seeing keyboard up & down navigation in action, we need visual feedback based on "active" prop
             style={{
-              background: active ? "rgb(245,245,245)" : "#fff",
-              borderLeft: active ? "2px solid black" : "2px solid transparent",
+              background: active ? "var(--cal-bg-subtle)" : `var(--cal-bg-default)`,
+              borderLeft: active ? "2px solid var(--cal-border-default)" : "2px solid transparent",
+              color: "var(--cal-text)",
             }}
             className="flex items-center justify-between px-4 py-2.5 text-sm hover:cursor-pointer">
             <span>{t(item.name)}</span>

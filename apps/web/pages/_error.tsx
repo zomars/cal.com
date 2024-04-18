@@ -2,16 +2,15 @@
  * Typescript class based component for custom-error
  * @link https://nextjs.org/docs/advanced-features/custom-error-page
  */
-import * as Sentry from "@sentry/nextjs";
 import type { NextPage, NextPageContext } from "next";
 import type { ErrorProps } from "next/error";
 import NextError from "next/error";
 import React from "react";
 
 import { getErrorFromUnknown } from "@calcom/lib/errors";
+import { HttpError } from "@calcom/lib/http-error";
 import logger from "@calcom/lib/logger";
-
-import { HttpError } from "@lib/core/http/error";
+import { redactError } from "@calcom/lib/redactError";
 
 import { ErrorPage } from "@components/error/error-page";
 
@@ -27,7 +26,7 @@ type AugmentedNextPageContext = Omit<NextPageContext, "err"> & {
   err: AugmentedError;
 };
 
-const log = logger.getChildLogger({ prefix: ["[error]"] });
+const log = logger.getSubLogger({ prefix: ["[error]"] });
 
 const CustomError: NextPage<CustomErrorProps> = (props) => {
   const { statusCode, err, message, hasGetInitialPropsRun } = props;
@@ -50,7 +49,6 @@ const CustomError: NextPage<CustomErrorProps> = (props) => {
  */
 CustomError.getInitialProps = async (ctx: AugmentedNextPageContext) => {
   const { res, err, asPath } = ctx;
-  await Sentry.captureUnderscoreErrorException(ctx);
   const errorInitialProps = (await NextError.getInitialProps({
     res,
     err,
@@ -62,10 +60,17 @@ CustomError.getInitialProps = async (ctx: AugmentedNextPageContext) => {
 
   // If a HttpError message, let's override defaults
   if (err instanceof HttpError) {
+    const redactedError = redactError(err);
     errorInitialProps.statusCode = err.statusCode;
-    errorInitialProps.title = err.name;
-    errorInitialProps.message = err.message;
-    errorInitialProps.err = err;
+    errorInitialProps.title = redactedError.name;
+    errorInitialProps.message = redactedError.message;
+    errorInitialProps.err = {
+      ...redactedError,
+      url: err.url,
+      statusCode: err.statusCode,
+      cause: err.cause,
+      method: err.method,
+    };
   }
 
   if (res) {

@@ -25,12 +25,12 @@ export default function SAMLConnection({
       <div className="flex flex-col sm:flex-row">
         <div>
           <h2 className="font-medium">{t("sso_saml_heading")}</h2>
-          <p className="text-sm font-normal leading-6 text-gray-700 dark:text-gray-300">
+          <p className="text-default text-sm font-normal leading-6 dark:text-gray-300">
             {t("sso_saml_description")}
           </p>
         </div>
         {!connection && (
-          <div className="flex-shrink-0 pt-3 sm:ml-auto sm:pt-0 sm:pl-3">
+          <div className="flex-shrink-0 pt-3 sm:ml-auto sm:pl-3 sm:pt-0">
             <Button color="secondary" onClick={() => setOpenModal(true)}>
               Configure
             </Button>
@@ -52,7 +52,7 @@ const CreateConnectionDialog = ({
   setOpenModal: (open: boolean) => void;
 }) => {
   const { t } = useLocale();
-  const utils = trpc.useContext();
+  const utils = trpc.useUtils();
   const form = useForm<FormValues>();
 
   const mutation = trpc.viewer.saml.update.useMutation({
@@ -82,11 +82,11 @@ const CreateConnectionDialog = ({
               encodedRawMetadata: Buffer.from(values.metadata).toString("base64"),
             });
           }}>
-          <div className="mb-10 mt-1">
-            <h2 className="font-semi-bold font-cal text-xl tracking-wide text-gray-900">
+          <div className="mb-1">
+            <h2 className="font-semi-bold font-cal text-emphasis text-xl tracking-wide">
               {t("sso_saml_configuration_title")}
             </h2>
-            <p className="mt-1 mb-5 text-sm text-gray-500">{t("sso_saml_configuration_description")}</p>
+            <p className="text-subtle mb-5 mt-1 text-sm">{t("sso_saml_configuration_description")}</p>
           </div>
           <Controller
             control={form.control}
@@ -107,7 +107,7 @@ const CreateConnectionDialog = ({
               </div>
             )}
           />
-          <DialogFooter>
+          <DialogFooter showDivider className="mt-10">
             <Button
               type="button"
               color="secondary"

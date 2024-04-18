@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useCallback, useRef, useState } from "react";
 import type {
   BuilderProps,
@@ -32,7 +34,7 @@ type QueryBuilderUpdatedConfig = typeof QueryBuilderInitialConfig & { fields: Co
 const Result = ({ formId, jsonLogicQuery }: { formId: string; jsonLogicQuery: JsonLogicQuery | null }) => {
   const { t } = useLocale();
 
-  const { isLoading, status, data, isFetching, error, isFetchingNextPage, hasNextPage, fetchNextPage } =
+  const { isPending, status, data, isFetching, error, isFetchingNextPage, hasNextPage, fetchNextPage } =
     trpc.viewer.appRoutingForms.report.useInfiniteQuery(
       {
         formId: formId,
@@ -55,7 +57,7 @@ const Result = ({ formId, jsonLogicQuery }: { formId: string; jsonLogicQuery: Js
 
   const headers = useRef<string[] | null>(null);
 
-  if (!isLoading && !data) {
+  if (!isPending && !data) {
     return <div>Error loading report {error?.message} </div>;
   }
   headers.current = (data?.pages && data?.pages[0]?.headers) || headers.current;
@@ -64,12 +66,14 @@ const Result = ({ formId, jsonLogicQuery }: { formId: string; jsonLogicQuery: Js
     <div className="w-full max-w-[2000px] overflow-x-scroll">
       <table
         data-testid="reporting-table"
-        className="table-fixed border-separate border-spacing-0 rounded-md border border-gray-300 bg-gray-100">
-        <tr data-testid="reporting-header" className="border-b border-gray-300 bg-gray-200">
+        className="border-default bg-subtle mx-3 mb-4 table-fixed border-separate border-spacing-0 overflow-hidden rounded-md border">
+        <tr
+          data-testid="reporting-header"
+          className="border-default text-default bg-emphasis rounded-md border-b">
           {headers.current?.map((header, index) => (
             <th
               className={classNames(
-                "border-b border-gray-300 py-3 px-2  text-left text-base font-medium",
+                "border-default border-b px-2 py-3  text-left text-base font-medium",
                 index !== (headers.current?.length || 0) - 1 ? "border-r" : ""
               )}
               key={index}>
@@ -77,7 +81,7 @@ const Result = ({ formId, jsonLogicQuery }: { formId: string; jsonLogicQuery: Js
             </th>
           ))}
         </tr>
-        {!isLoading &&
+        {!isPending &&
           data?.pages.map((page) => {
             return page.responses?.map((responses, rowIndex) => {
               const isLastRow = page.responses.length - 1 === rowIndex;
@@ -87,7 +91,7 @@ const Result = ({ formId, jsonLogicQuery }: { formId: string; jsonLogicQuery: Js
                   data-testid="reporting-row"
                   className={classNames(
                     "text-center text-sm",
-                    rowIndex % 2 ? "" : "bg-white",
+                    rowIndex % 2 ? "" : "bg-default",
                     isLastRow ? "" : "border-b"
                   )}>
                   {responses.map((r, columnIndex) => {
@@ -95,7 +99,7 @@ const Result = ({ formId, jsonLogicQuery }: { formId: string; jsonLogicQuery: Js
                     return (
                       <td
                         className={classNames(
-                          "overflow-x-hidden border-gray-300 py-3 px-2 text-left",
+                          "border-default overflow-x-hidden px-2 py-3 text-left",
                           isLastRow ? "" : "border-b",
                           isLastColumn ? "" : "border-r"
                         )}
@@ -109,16 +113,18 @@ const Result = ({ formId, jsonLogicQuery }: { formId: string; jsonLogicQuery: Js
             });
           })}
       </table>
-      {isLoading ? <div className="p-2">Report is loading</div> : ""}
-      <Button
-        type="button"
-        color="minimal"
-        ref={buttonInView.ref}
-        loading={isFetchingNextPage}
-        disabled={!hasNextPage}
-        onClick={() => fetchNextPage()}>
-        {hasNextPage ? t("load_more_results") : t("no_more_results")}
-      </Button>
+      {isPending ? <div className="text-default p-2">{t("loading")}</div> : ""}
+      {hasNextPage && (
+        <Button
+          type="button"
+          color="minimal"
+          ref={buttonInView.ref}
+          loading={isFetchingNextPage}
+          disabled={!hasNextPage}
+          onClick={() => fetchNextPage()}>
+          {hasNextPage ? t("load_more_results") : t("no_more_results")}
+        </Button>
+      )}
     </div>
   );
 };
@@ -160,18 +166,16 @@ const Reporter = ({ form }: { form: inferSSRProps<typeof getServerSideProps>["fo
     []
   );
   return (
-    <div className="flex flex-col-reverse md:flex-row">
-      <div className="cal-query-builder w-full ltr:mr-2 rtl:ml-2">
-        <Query
-          {...config}
-          value={query.state.tree}
-          onChange={(immutableTree, config) => {
-            onChange(immutableTree, config as QueryBuilderUpdatedConfig);
-          }}
-          renderBuilder={renderBuilder}
-        />
-        <Result formId={form.id} jsonLogicQuery={jsonLogicQuery as JsonLogicQuery} />
-      </div>
+    <div className="cal-query-builder bg-default fixed inset-0 w-full overflow-scroll pt-12 ltr:mr-2 rtl:ml-2 sm:pt-0">
+      <Query
+        {...config}
+        value={query.state.tree}
+        onChange={(immutableTree, config) => {
+          onChange(immutableTree, config as QueryBuilderUpdatedConfig);
+        }}
+        renderBuilder={renderBuilder}
+      />
+      <Result formId={form.id} jsonLogicQuery={jsonLogicQuery as JsonLogicQuery} />
     </div>
   );
 };

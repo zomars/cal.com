@@ -13,8 +13,12 @@ interface SkeletonContainer {
   className?: string;
 }
 
+type SkeletonLoaderProps = {
+  className: string;
+};
+
 const SkeletonAvatar: React.FC<SkeletonBaseProps> = ({ className }) => {
-  return <div className={classNames(`mt-1 rounded-full bg-gray-200 ltr:mr-2 rtl:ml-2`, className)} />;
+  return <div className={classNames(`bg-emphasis me-3 mt-1 rounded-full`, className)} />;
 };
 
 type SkeletonProps<T> = {
@@ -52,10 +56,7 @@ const Skeleton = <T extends keyof JSX.IntrinsicElements | React.FC>({
     <Component
       className={classNames(
         loading
-          ? classNames(
-              "font-size-0 dark:white-300 animate-pulse rounded-md bg-gray-300 text-transparent",
-              loadingClassName
-            )
+          ? classNames("font-size-0 bg-emphasis animate-pulse rounded-md text-transparent", loadingClassName)
           : "",
         className
       )}
@@ -65,14 +66,16 @@ const Skeleton = <T extends keyof JSX.IntrinsicElements | React.FC>({
   );
 };
 
-const SkeletonText: React.FC<SkeletonBaseProps & { invisible?: boolean }> = ({
+const SkeletonText: React.FC<SkeletonBaseProps & { invisible?: boolean; style?: React.CSSProperties }> = ({
   className = "",
   invisible = false,
+  style,
 }) => {
   return (
     <span
+      style={style}
       className={classNames(
-        `font-size-0 dark:white-300 inline-block animate-pulse rounded-md bg-gray-300 empty:before:inline-block empty:before:content-['']`,
+        `font-size-0 bg-emphasis inline-block animate-pulse rounded-md empty:before:inline-block empty:before:content-['']`,
         className,
         invisible ? "invisible" : ""
       )}
@@ -83,7 +86,7 @@ const SkeletonText: React.FC<SkeletonBaseProps & { invisible?: boolean }> = ({
 const SkeletonButton: React.FC<SkeletonBaseProps> = ({ className }) => {
   return (
     <SkeletonContainer>
-      <div className={classNames(`rounded-md bg-gray-200`, className)} />
+      <div className={classNames(`bg-emphasis rounded-md`, className)} />
     </SkeletonContainer>
   );
 };
@@ -93,5 +96,22 @@ const SkeletonContainer: React.FC<SkeletonContainer> = ({ children, as, classNam
   return <Component className={classNames("animate-pulse", className)}>{children}</Component>;
 };
 
-export { Skeleton, SkeletonAvatar, SkeletonText, SkeletonButton, SkeletonContainer };
+const SelectSkeletonLoader: React.FC<SkeletonLoaderProps> = ({ className }) => {
+  return (
+    <li
+      className={classNames(
+        "border-subtle group flex w-full items-center justify-between rounded-sm border px-[10px] py-3",
+        className
+      )}>
+      <div className="flex-grow truncate text-sm">
+        <div className="flex justify-between">
+          <SkeletonText className="h-4 w-32" />
+          <SkeletonText className="h-4 w-4" />
+        </div>
+      </div>
+    </li>
+  );
+};
+
+export { Skeleton, SkeletonAvatar, SkeletonText, SkeletonButton, SkeletonContainer, SelectSkeletonLoader };
 export { default as Loader } from "./Loader";

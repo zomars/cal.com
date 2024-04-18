@@ -1,12 +1,26 @@
 import type { TFunction } from "next-i18next";
+import z from "zod";
 
 import { guessEventLocationType } from "@calcom/app-store/locations";
 import type { Prisma } from "@calcom/prisma/client";
 
+export const nameObjectSchema = z.object({
+  firstName: z.string(),
+  lastName: z.string().optional(),
+});
+
+function parseName(name: z.infer<typeof nameObjectSchema> | string | undefined) {
+  if (typeof name === "string") return name;
+  else if (typeof name === "object" && nameObjectSchema.parse(name))
+    return `${name.firstName} ${name.lastName}`.trim();
+  else return "Nameless";
+}
+
 export type EventNameObjectType = {
-  attendeeName: string;
+  attendeeName: z.infer<typeof nameObjectSchema> | string;
   eventType: string;
   eventName?: string | null;
+  teamName?: string | null;
   host: string;
   location?: string;
   bookingFields?: Prisma.JsonObject;
@@ -14,11 +28,13 @@ export type EventNameObjectType = {
 };
 
 export function getEventName(eventNameObj: EventNameObjectType, forAttendeeView = false) {
+  const attendeeName = parseName(eventNameObj.attendeeName);
+
   if (!eventNameObj.eventName)
     return eventNameObj.t("event_between_users", {
       eventName: eventNameObj.eventType,
-      host: eventNameObj.host,
-      attendeeName: eventNameObj.attendeeName,
+      host: eventNameObj.teamName || eventNameObj.host,
+      attendeeName,
       interpolation: {
         escapeValue: false,
       },
@@ -39,12 +55,12 @@ export function getEventName(eventNameObj: EventNameObjectType, forAttendeeView 
   let dynamicEventName = eventName
     // Need this for compatibility with older event names
     .replaceAll("{Event type title}", eventNameObj.eventType)
-    .replaceAll("{Scheduler}", eventNameObj.attendeeName)
+    .replaceAll("{Scheduler}", attendeeName)
     .replaceAll("{Organiser}", eventNameObj.host)
-    .replaceAll("{USER}", eventNameObj.attendeeName)
-    .replaceAll("{ATTENDEE}", eventNameObj.attendeeName)
+    .replaceAll("{USER}", attendeeName)
+    .replaceAll("{ATTENDEE}", attendeeName)
     .replaceAll("{HOST}", eventNameObj.host)
-    .replaceAll("{HOST/ATTENDEE}", forAttendeeView ? eventNameObj.host : eventNameObj.attendeeName);
+    .replaceAll("{HOST/ATTENDEE}", forAttendeeView ? eventNameObj.host : attendeeName);
 
   const customInputvariables = dynamicEventName.match(/\{(.+?)}/g)?.map((variable) => {
     return variable.replace("{", "").replace("}", "");
@@ -56,8 +72,12 @@ export function getEventName(eventNameObj: EventNameObjectType, forAttendeeView 
         if (variable === bookingField) {
           let fieldValue;
           if (eventNameObj.bookingFields) {
-            fieldValue =
-              eventNameObj.bookingFields[bookingField as keyof typeof eventNameObj.bookingFields]?.toString();
+            const field = eventNameObj.bookingFields[bookingField as keyof typeof eventNameObj.bookingFields];
+            if (field && typeof field === "object" && "value" in field) {
+              fieldValue = field?.value?.toString();
+            } else {
+              fieldValue = field?.toString();
+            }
           }
           dynamicEventName = dynamicEventName.replace(`{${variable}}`, fieldValue || "");
         }
@@ -85,6 +105,12 @@ export const validateCustomEventName = (
     "{Organiser}",
     "{Scheduler}",
     "{Location}",
+    //allowed for fallback reasons
+    "{LOCATION}",
+    "{HOST/ATTENDEE}",
+    "{HOST}",
+    "{ATTENDEE}",
+    "{USER}",
   ]);
   const matches = value.match(/\{([^}]+)\}/g);
   if (matches?.length) {

@@ -1,61 +1,54 @@
-// import * as example from "./_example";
-import * as applecalendar from "./applecalendar";
-import * as caldavcalendar from "./caldavcalendar";
-import * as closecom from "./closecom";
-import * as dailyvideo from "./dailyvideo";
-import * as exchange2013calendar from "./exchange2013calendar";
-import * as exchange2016calendar from "./exchange2016calendar";
-import * as exchangecalendar from "./exchangecalendar";
-import * as facetime from "./facetime";
-import * as giphy from "./giphy";
-import * as googlecalendar from "./googlecalendar";
-import * as googlevideo from "./googlevideo";
-import * as hubspot from "./hubspot";
-import * as huddle01video from "./huddle01video";
-import * as jitsivideo from "./jitsivideo";
-import * as larkcalendar from "./larkcalendar";
-import * as office365calendar from "./office365calendar";
-import * as office365video from "./office365video";
-import * as plausible from "./plausible";
-import * as salesforce from "./salesforce";
-import * as sendgrid from "./sendgrid";
-import * as stripepayment from "./stripepayment";
-import * as tandemvideo from "./tandemvideo";
-import * as vital from "./vital";
-import * as wipemycalother from "./wipemycalother";
-import * as zapier from "./zapier";
-import * as zohocrm from "./zohocrm";
-import * as zoomvideo from "./zoomvideo";
-
 const appStore = {
-  //   example,
-  applecalendar,
-  caldavcalendar,
-  closecom,
-  dailyvideo,
-  googlecalendar,
-  googlevideo,
-  hubspot,
-  huddle01video,
-  jitsivideo,
-  larkcalendar,
-  office365calendar,
-  office365video,
-  plausible,
-  salesforce,
-  zohocrm,
-  sendgrid,
-  stripepayment,
-  tandemvideo,
-  vital,
-  zoomvideo,
-  wipemycalother,
-  giphy,
-  zapier,
-  exchange2013calendar,
-  exchange2016calendar,
-  exchangecalendar,
-  facetime,
+  // example: () => import("./example"),
+  alby: () => import("./alby"),
+  applecalendar: () => import("./applecalendar"),
+  aroundvideo: () => import("./around"),
+  caldavcalendar: () => import("./caldavcalendar"),
+  closecom: () => import("./closecom"),
+  dailyvideo: () => import("./dailyvideo"),
+  googlecalendar: () => import("./googlecalendar"),
+  googlevideo: () => import("./googlevideo"),
+  hubspot: () => import("./hubspot"),
+  huddle01video: () => import("./huddle01video"),
+  "ics-feedcalendar": () => import("./ics-feedcalendar"),
+  jellyconferencing: () => import("./jelly"),
+  jitsivideo: () => import("./jitsivideo"),
+  larkcalendar: () => import("./larkcalendar"),
+  office365calendar: () => import("./office365calendar"),
+  office365video: () => import("./office365video"),
+  plausible: () => import("./plausible"),
+  paypal: () => import("./paypal"),
+  "pipedrive-crm": () => import("./pipedrive-crm"),
+  salesforce: () => import("./salesforce"),
+  zohocrm: () => import("./zohocrm"),
+  sendgrid: () => import("./sendgrid"),
+  stripepayment: () => import("./stripepayment"),
+  tandemvideo: () => import("./tandemvideo"),
+  vital: () => import("./vital"),
+  zoomvideo: () => import("./zoomvideo"),
+  wipemycalother: () => import("./wipemycalother"),
+  webexvideo: () => import("./webex"),
+  giphy: () => import("./giphy"),
+  zapier: () => import("./zapier"),
+  make: () => import("./make"),
+  exchange2013calendar: () => import("./exchange2013calendar"),
+  exchange2016calendar: () => import("./exchange2016calendar"),
+  exchangecalendar: () => import("./exchangecalendar"),
+  facetime: () => import("./facetime"),
+  sylapsvideo: () => import("./sylapsvideo"),
+  zohocalendar: () => import("./zohocalendar"),
+  "zoho-bigin": () => import("./zoho-bigin"),
+  basecamp3: () => import("./basecamp3"),
+  telegramvideo: () => import("./telegram"),
+  shimmervideo: () => import("./shimmervideo"),
 };
 
-export default appStore;
+const exportedAppStore: typeof appStore & {
+  ["mock-payment-app"]?: () => Promise<typeof import("./mock-payment-app/index")>;
+} = appStore;
+
+if (process.env.MOCK_PAYMENT_APP_ENABLED !== undefined) {
+  exportedAppStore["mock-payment-app"] = () => import("./mock-payment-app/index");
+}
+
+export default exportedAppStore;

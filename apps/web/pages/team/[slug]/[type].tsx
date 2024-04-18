@@ -1,205 +1,78 @@
-import type { GetServerSidePropsContext } from "next";
+"use client";
 
-import type { LocationObject } from "@calcom/core/location";
-import { privacyFilteredLocations } from "@calcom/core/location";
-import { getBookingFieldsWithSystemFields } from "@calcom/features/bookings/lib/getBookingFields";
-import { parseRecurringEvent } from "@calcom/lib";
-import { getWorkingHours } from "@calcom/lib/availability";
-import prisma from "@calcom/prisma";
-import { EventTypeMetaDataSchema } from "@calcom/prisma/zod-utils";
+import { useSearchParams } from "next/navigation";
 
-import { asStringOrNull } from "@lib/asStringOrNull";
-import type { GetBookingType } from "@lib/getBooking";
-import getBooking from "@lib/getBooking";
+import { Booker } from "@calcom/atoms/monorepo";
+import { getBookerWrapperClasses } from "@calcom/features/bookings/Booker/utils/getBookerWrapperClasses";
+import { BookerSeo } from "@calcom/features/bookings/components/BookerSeo";
+
+import { getServerSideProps } from "@lib/team/[slug]/[type]/getServerSideProps";
 import type { inferSSRProps } from "@lib/types/inferSSRProps";
 import type { EmbedProps } from "@lib/withEmbedSsr";
 
-import AvailabilityPage from "@components/booking/pages/AvailabilityPage";
+import PageWrapper from "@components/PageWrapper";
 
-import { ssgInit } from "@server/lib/ssg";
+export type PageProps = inferSSRProps<typeof getServerSideProps> & EmbedProps;
 
-export type AvailabilityTeamPageProps = inferSSRProps<typeof getServerSideProps> & EmbedProps;
+export { getServerSideProps };
 
-export default function TeamType(props: AvailabilityTeamPageProps) {
-  return <AvailabilityPage {...props} />;
-}
-TeamType.isThemeSupported = true;
-
-export const getServerSideProps = async (context: GetServerSidePropsContext) => {
-  const slugParam = asStringOrNull(context.query.slug);
-  const typeParam = asStringOrNull(context.query.type);
-  const dateParam = asStringOrNull(context.query.date);
-  const rescheduleUid = asStringOrNull(context.query.rescheduleUid);
-  const ssg = await ssgInit(context);
-
-  if (!slugParam || !typeParam) {
-    throw new Error(`File is not named [idOrSlug]/[user]`);
-  }
-
-  const team = await prisma.team.findFirst({
-    where: {
-      slug: slugParam,
-    },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      logo: true,
-      hideBranding: true,
-      brandColor: true,
-      darkBrandColor: true,
-      theme: true,
-      eventTypes: {
-        where: {
-          slug: typeParam,
-        },
-        select: {
-          id: true,
-          slug: true,
-          hidden: true,
-          hosts: {
-            select: {
-              isFixed: true,
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  avatar: true,
-                  username: true,
-                  timeZone: true,
-                  hideBranding: true,
-                  brandColor: true,
-                  darkBrandColor: true,
-                },
-              },
-            },
-          },
-
-          title: true,
-          availability: true,
-          description: true,
-          length: true,
-          disableGuests: true,
-          schedulingType: true,
-          periodType: true,
-          periodStartDate: true,
-          periodEndDate: true,
-          periodDays: true,
-          periodCountCalendarDays: true,
-          minimumBookingNotice: true,
-          beforeEventBuffer: true,
-          afterEventBuffer: true,
-          recurringEvent: true,
-          requiresConfirmation: true,
-          locations: true,
-          price: true,
-          currency: true,
-          timeZone: true,
-          slotInterval: true,
-          metadata: true,
-          seatsPerTimeSlot: true,
-          bookingFields: true,
-          customInputs: true,
-          schedule: {
-            select: {
-              timeZone: true,
-              availability: true,
-            },
-          },
-          workflows: {
-            select: {
-              workflow: {
-                select: {
-                  id: true,
-                  steps: true,
-                },
-              },
-            },
-          },
-          team: {
-            select: {
-              members: {
-                where: {
-                  role: "OWNER",
-                },
-                select: {
-                  user: {
-                    select: {
-                      weekStart: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!team || team.eventTypes.length != 1) {
-    return {
-      notFound: true,
-    } as {
-      notFound: true;
-    };
-  }
-
-  const [eventType] = team.eventTypes;
-
-  const timeZone = eventType.schedule?.timeZone || eventType.timeZone || undefined;
-
-  const workingHours = getWorkingHours(
-    {
-      timeZone,
-    },
-    eventType.schedule?.availability || eventType.availability
-  );
-
-  eventType.schedule = null;
-
-  const locations = eventType.locations ? (eventType.locations as LocationObject[]) : [];
-  const eventTypeObject = Object.assign({}, eventType, {
-    metadata: EventTypeMetaDataSchema.parse(eventType.metadata || {}),
-    periodStartDate: eventType.periodStartDate?.toString() ?? null,
-    periodEndDate: eventType.periodEndDate?.toString() ?? null,
-    recurringEvent: parseRecurringEvent(eventType.recurringEvent),
-    locations: privacyFilteredLocations(locations),
-    users: eventType.hosts.map(({ user: { name, username, hideBranding, timeZone } }) => ({
-      name,
-      username,
-      hideBranding,
-      timeZone,
-    })),
-  });
-
-  eventTypeObject.availability = [];
-
-  let booking: GetBookingType | null = null;
-  if (rescheduleUid) {
-    booking = await getBooking(prisma, rescheduleUid, getBookingFieldsWithSystemFields(eventTypeObject));
-  }
-
-  const weekStart = eventType.team?.members?.[0]?.user?.weekStart;
-
-  return {
-    props: {
-      profile: {
-        name: team.name || team.slug,
-        slug: team.slug,
-        image: team.logo,
-        theme: team.theme,
-        weekStart: weekStart ?? "Sunday",
-        brandColor: team.brandColor,
-        darkBrandColor: team.darkBrandColor,
-      },
-      date: dateParam,
-      eventType: eventTypeObject,
-      workingHours,
-      previousPage: context.req.headers.referer ?? null,
-      booking,
-      trpcState: ssg.dehydrate(),
-      isBrandingHidden: team.hideBranding,
-    },
-  };
+export const getMultipleDurationValue = (
+  multipleDurationConfig: number[] | undefined,
+  queryDuration: string | string[] | null | undefined,
+  defaultValue: number
+) => {
+  if (!multipleDurationConfig) return null;
+  if (multipleDurationConfig.includes(Number(queryDuration))) return Number(queryDuration);
+  return defaultValue;
 };
+
+export default function Type({
+  slug,
+  user,
+  booking,
+  away,
+  isEmbed,
+  isBrandingHidden,
+  eventData,
+  isInstantMeeting,
+  orgBannerUrl,
+}: PageProps) {
+  const searchParams = useSearchParams();
+
+  return (
+    <main className={getBookerWrapperClasses({ isEmbed: !!isEmbed })}>
+      <BookerSeo
+        username={user}
+        eventSlug={slug}
+        rescheduleUid={booking?.uid}
+        hideBranding={isBrandingHidden}
+        isTeamEvent
+        entity={eventData.entity}
+        bookingData={booking}
+      />
+      <Booker
+        username={user}
+        eventSlug={slug}
+        bookingData={booking}
+        isAway={away}
+        isInstantMeeting={isInstantMeeting}
+        hideBranding={isBrandingHidden}
+        isTeamEvent
+        entity={eventData.entity}
+        durationConfig={eventData.metadata?.multipleDuration}
+        /* TODO: Currently unused, evaluate it is needed-
+         *       Possible alternative approach is to have onDurationChange.
+         */
+        duration={getMultipleDurationValue(
+          eventData.metadata?.multipleDuration,
+          searchParams?.get("duration"),
+          eventData.length
+        )}
+        orgBannerUrl={orgBannerUrl}
+      />
+    </main>
+  );
+}
+
+Type.PageWrapper = PageWrapper;
+Type.isBookingPage = true;

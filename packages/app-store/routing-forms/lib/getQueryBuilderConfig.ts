@@ -44,14 +44,20 @@ export function getQueryBuilderConfig(form: RoutingForm, forReporting = false) {
         // preferWidgets: field.type === "textarea" ? ["textarea"] : [],
       };
     } else {
-      throw new Error("Unsupported field type:" + field.type);
+      throw new Error(`Unsupported field type:${field.type}`);
     }
   });
 
   const initialConfigCopy = { ...InitialConfig, operators: { ...InitialConfig.operators } };
   if (forReporting) {
+    // Empty and Not empty doesn't work well with JSON querying in prisma. Try to implement these when we desperately need these operators.
     delete initialConfigCopy.operators.is_empty;
     delete initialConfigCopy.operators.is_not_empty;
+
+    // Between and Not between aren't directly supported by prisma. So, we need to update jsonLogicToPrisma to generate gte and lte query for between. It can be implemented later.
+    delete initialConfigCopy.operators.between;
+    delete initialConfigCopy.operators.not_between;
+
     initialConfigCopy.operators.__calReporting = true;
   }
   // You need to provide your own config. See below 'Config format'

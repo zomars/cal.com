@@ -6,6 +6,11 @@ export type StripePaymentData = Stripe.Response<Stripe.PaymentIntent> & {
   stripeAccount: string;
 };
 
+export type StripeSetupIntentData = {
+  setupIntent: Stripe.Response<Stripe.SetupIntent>;
+  paymentIntent?: StripePaymentData;
+};
+
 export const stripeOAuthTokenSchema = z.object({
   access_token: z.string().optional(),
   scope: z.string().optional(),
@@ -23,7 +28,7 @@ export const stripeDataSchema = stripeOAuthTokenSchema.extend({
 export type StripeData = z.infer<typeof stripeDataSchema>;
 
 /** Figure out a way to get this from the DB without too much wreckage. */
-const stripePrivateKey = process.env.STRIPE_PRIVATE_KEY!;
+const stripePrivateKey = process.env.STRIPE_PRIVATE_KEY || "";
 const stripe = new Stripe(stripePrivateKey, {
   apiVersion: "2020-08-27",
 });

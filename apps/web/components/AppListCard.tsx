@@ -1,14 +1,25 @@
-import { useRouter } from "next/router";
+import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
+import type { CredentialOwner } from "@calcom/app-store/types";
+import classNames from "@calcom/lib/classNames";
+import { getPlaceholderAvatar } from "@calcom/lib/defaultAvatarImage";
+import { useCompatSearchParams } from "@calcom/lib/hooks/useCompatSearchParams";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { useTypedQuery } from "@calcom/lib/hooks/useTypedQuery";
-import { Badge, ListItemText } from "@calcom/ui";
-import { FiAlertCircle } from "@calcom/ui/components/icon";
+import { Avatar, Badge, Icon, ListItemText } from "@calcom/ui";
 
-type ShouldHighlight = { slug: string; shouldHighlight: true } | { shouldHighlight?: never; slug?: never };
+type ShouldHighlight =
+  | {
+      slug: string;
+      shouldHighlight: true;
+    }
+  | {
+      shouldHighlight?: never;
+      slug?: never;
+    };
 
 type AppListCardProps = {
   logo?: string;
@@ -19,6 +30,8 @@ type AppListCardProps = {
   isTemplate?: boolean;
   invalidCredential?: boolean;
   children?: ReactNode;
+  credentialOwner?: CredentialOwner;
+  className?: string;
 } & ShouldHighlight;
 
 const schema = z.object({ hl: z.string().optional() });
@@ -36,6 +49,8 @@ export default function AppListCard(props: AppListCardProps) {
     isTemplate,
     invalidCredential,
     children,
+    credentialOwner,
+    className,
   } = props;
   const {
     data: { hl },
@@ -43,16 +58,22 @@ export default function AppListCard(props: AppListCardProps) {
   const router = useRouter();
   const [highlight, setHighlight] = useState(shouldHighlight && hl === slug);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchParams = useCompatSearchParams();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (shouldHighlight && highlight) {
-      const timer = setTimeout(() => {
+    if (shouldHighlight && highlight && searchParams !== null && pathname !== null) {
+      timeoutRef.current = setTimeout(() => {
+        const _searchParams = new URLSearchParams(searchParams);
+        _searchParams.delete("hl");
+        _searchParams.delete("category"); // this comes from params, not from search params
+
         setHighlight(false);
-        const url = new URL(window.location.href);
-        url.searchParams.delete("hl");
-        router.replace(url.pathname, undefined, { shallow: true });
+
+        const stringifiedSearchParams = _searchParams.toString();
+
+        router.replace(`${pathname}${stringifiedSearchParams !== "" ? `?${stringifiedSearchParams}` : ""}`);
       }, 3000);
-      timeoutRef.current = timer;
     }
     return () => {
       if (timeoutRef.current) {
@@ -60,15 +81,21 @@ export default function AppListCard(props: AppListCardProps) {
         timeoutRef.current = null;
       }
     };
-  }, []);
+  }, [highlight, pathname, router, searchParams, shouldHighlight]);
 
   return (
-    <div className={`${highlight ? "bg-yellow-100" : ""}`}>
-      <div className="flex gap-x-3 px-5 py-4">
-        {logo ? <img className="h-10 w-10" src={logo} alt={`${title} logo`} /> : null}
+    <div className={classNames(highlight && "dark:bg-muted bg-yellow-100", className)}>
+      <div className="flex items-center gap-x-3 px-4 py-4 sm:px-6">
+        {logo ? (
+          <img
+            className={classNames(logo.includes("-dark") && "dark:invert", "h-10 w-10")}
+            src={logo}
+            alt={`${title} logo`}
+          />
+        ) : null}
         <div className="flex grow flex-col gap-y-1 truncate">
           <div className="flex items-center gap-x-2">
-            <h3 className="truncate text-sm font-semibold text-gray-900">{title}</h3>
+            <h3 className="text-emphasis truncate text-sm font-semibold">{title}</h3>
             <div className="flex items-center gap-x-2">
               {isDefault && <Badge variant="green">{t("default")}</Badge>}
               {isTemplate && <Badge variant="red">Template</Badge>}
@@ -77,13 +104,28 @@ export default function AppListCard(props: AppListCardProps) {
           <ListItemText component="p">{description}</ListItemText>
           {invalidCredential && (
             <div className="flex gap-x-2 pt-2">
-              <FiAlertCircle className="h-8 w-8 text-red-500 sm:h-4 sm:w-4" />
+              <Icon name="circle-alert" className="h-8 w-8 text-red-500 sm:h-4 sm:w-4" />
               <ListItemText component="p" className="whitespace-pre-wrap text-red-500">
                 {t("invalid_credential")}
               </ListItemText>
             </div>
           )}
         </div>
+        {credentialOwner && (
+          <div>
+            <Badge variant="gray">
+              <div className="flex items-center">
+                <Avatar
+                  className="mr-2"
+                  alt={credentialOwner.name || "Nameless"}
+                  size="xs"
+                  imageSrc={getPlaceholderAvatar(credentialOwner.avatar, credentialOwner?.name as string)}
+                />
+                {credentialOwner.name}
+              </div>
+            </Badge>
+          </div>
+        )}
 
         {actions}
       </div>

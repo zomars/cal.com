@@ -1,81 +1,92 @@
 import { useState } from "react";
 
+import { useFilterQuery } from "@calcom/features/bookings/lib/useFilterQuery";
+import { useOrgBranding } from "@calcom/features/ee/organizations/context/provider";
+import {
+  FilterCheckboxField,
+  FilterCheckboxFieldsContainer,
+} from "@calcom/features/filters/components/TeamsFilter";
+import { WEBAPP_URL } from "@calcom/lib/constants";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { trpc } from "@calcom/trpc/react";
-import { AnimatedPopover, Avatar } from "@calcom/ui";
-import { FiUser } from "@calcom/ui/components/icon";
-
-import { useFilterQuery } from "../lib/useFilterQuery";
+import { AnimatedPopover, Avatar, Divider, FilterSearchField, Icon } from "@calcom/ui";
 
 export const PeopleFilter = () => {
   const { t } = useLocale();
-  const { data: query, pushItemToKey, removeItemByKeyAndValue, removeByKey } = useFilterQuery();
-  const { data } = trpc.viewer.teams.listMembers.useQuery({});
-  const [dropdownTitle, setDropdownTitle] = useState<string>(t("all_users_filter_label"));
+  const orgBranding = useOrgBranding();
 
-  if (!data || !data.length) return null;
+  const { data: currentOrg } = trpc.viewer.organizations.listCurrent.useQuery();
+  const isAdmin = currentOrg?.user.role === "ADMIN" || currentOrg?.user.role === "OWNER";
+  const hasPermToView = !currentOrg?.isPrivate || isAdmin;
 
-  // Get user names from query
-  const userNames = data?.filter((user) => query.userIds?.includes(user.id)).map((user) => user.name);
+  const { data: query, pushItemToKey, removeItemByKeyAndValue, removeAllQueryParams } = useFilterQuery();
+  const [searchText, setSearchText] = useState("");
+
+  const members = trpc.viewer.teams.listMembers.useQuery({});
+
+  const filteredMembers = members?.data
+    ?.filter((member) => member.accepted)
+    ?.filter((member) =>
+      searchText.trim() !== ""
+        ? member?.name?.toLowerCase()?.includes(searchText.toLowerCase()) ||
+          member?.username?.toLowerCase()?.includes(searchText.toLowerCase())
+        : true
+    );
+
+  const getTextForPopover = () => {
+    const userIds = query.userIds;
+    if (userIds) {
+      return `${t("number_selected", { count: userIds.length })}`;
+    }
+    return `${t("all")}`;
+  };
+
+  if (!hasPermToView) {
+    return null;
+  }
 
   return (
-    <AnimatedPopover text={userNames && userNames.length > 0 ? `${userNames.join(", ")}` : dropdownTitle}>
-      <div className="item-center flex px-4 py-[6px] focus-within:bg-gray-100 hover:cursor-pointer hover:bg-gray-50">
-        <div className="flex h-6 w-6 items-center justify-center ltr:mr-2 rtl:ml-2">
-          <FiUser className="h-5 w-5" />
-        </div>
-        <label htmlFor="allUsers" className="mr-auto self-center truncate text-sm font-medium text-gray-700">
-          {t("all_users_filter_label")}
-        </label>
-
-        <input
-          id="allUsers"
-          type="checkbox"
-          checked={!query.userIds}
-          onChange={() => {
-            setDropdownTitle(t("all_users_filter_label"));
-            // Always clear userIds on toggle as this is the toggle box for all users. No params means we are currently selecting all users
-            removeByKey("userIds");
-          }}
-          className="text-primary-600 focus:ring-primary-500 inline-flex h-4 w-4 place-self-center justify-self-end rounded border-gray-300 "
+    <AnimatedPopover text={getTextForPopover()} prefix={`${t("people")}: `}>
+      <FilterCheckboxFieldsContainer>
+        <FilterCheckboxField
+          id="all"
+          icon={<Icon name="user" className="h-4 w-4" />}
+          checked={!query.userIds?.length}
+          onChange={removeAllQueryParams}
+          label={t("all_users_filter_label")}
         />
-      </div>
-      {data &&
-        data.map((user) => (
-          <div
-            className="item-center flex px-4 py-[6px] focus-within:bg-gray-100 focus-within:bg-gray-100 hover:cursor-pointer hover:bg-gray-50"
-            key={`${user.id}`}>
-            <Avatar
-              imageSrc={user.avatar}
-              size="sm"
-              alt={`${user.name} Avatar`}
-              gravatarFallbackMd5="fallback"
-              className="self-center"
-              asChild
-            />
-            <label
-              htmlFor={user.name ?? "NamelessUser"}
-              className="ml-2 mr-auto self-center truncate text-sm font-medium text-gray-700 hover:cursor-pointer">
-              {user.name}
-            </label>
-
-            <input
-              id={user.name ?? "NamelessUser"}
-              name={user.name ?? "NamelessUser"}
-              type="checkbox"
-              checked={query.userIds?.includes(user.id)}
-              onChange={(e) => {
-                setDropdownTitle(user.name ?? "NamelessUser");
-                if (e.target.checked) {
-                  pushItemToKey("userIds", user.id);
-                } else if (!e.target.checked) {
-                  removeItemByKeyAndValue("userIds", user.id);
+        <Divider />
+        <FilterSearchField onChange={(e) => setSearchText(e.target.value)} placeholder={t("search")} />
+        {filteredMembers?.map((member) => (
+          <FilterCheckboxField
+            key={member.id}
+            id={member.id.toString()}
+            label={member?.name ?? member.username ?? t("no_name")}
+            checked={!!query.userIds?.includes(member.id)}
+            onChange={(e) => {
+              if (e.target.checked) {
+                pushItemToKey("userIds", member.id);
+              } else if (!e.target.checked) {
+                removeItemByKeyAndValue("userIds", member.id);
+              }
+            }}
+            icon={
+              <Avatar
+                alt={`${member?.id} avatar`}
+                imageSrc={
+                  member.username
+                    ? `${orgBranding?.fullDomain ?? WEBAPP_URL}/${member.username}/avatar.png`
+                    : undefined
                 }
-              }}
-              className="text-primary-600 focus:ring-primary-500 inline-flex h-4 w-4 place-self-center justify-self-end rounded border-gray-300 "
-            />
-          </div>
+                size="xs"
+              />
+            }
+          />
         ))}
+        {filteredMembers?.length === 0 && (
+          <h2 className="text-default px-4 py-2 text-sm font-medium">{t("no_options_available")}</h2>
+        )}
+      </FilterCheckboxFieldsContainer>
     </AnimatedPopover>
   );
 };

@@ -1,46 +1,56 @@
-import { UserPermissionRole } from "@prisma/client";
-import type { GetServerSidePropsContext } from "next";
-import { useRouter } from "next/router";
+"use client";
+
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import AdminAppsList from "@calcom/features/apps/AdminAppsList";
-import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
-import { getDeploymentKey } from "@calcom/features/ee/deployment/lib/getDeploymentKey";
+import { APP_NAME } from "@calcom/lib/constants";
+import { useCompatSearchParams } from "@calcom/lib/hooks/useCompatSearchParams";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import prisma from "@calcom/prisma";
 import type { inferSSRProps } from "@calcom/types/inferSSRProps";
 import { Meta, WizardForm } from "@calcom/ui";
 
+import PageWrapper from "@components/PageWrapper";
 import { AdminUserContainer as AdminUser } from "@components/setup/AdminUser";
 import ChooseLicense from "@components/setup/ChooseLicense";
 import EnterpriseLicense from "@components/setup/EnterpriseLicense";
 
-import { ssrInit } from "@server/lib/ssr";
+import { getServerSideProps } from "@server/lib/setup/getServerSideProps";
 
-export default function Setup(props: inferSSRProps<typeof getServerSideProps>) {
+function useSetStep() {
+  const router = useRouter();
+  const searchParams = useCompatSearchParams();
+  const pathname = usePathname();
+  const setStep = (newStep = 1) => {
+    const _searchParams = new URLSearchParams(searchParams ?? undefined);
+    _searchParams.set("step", newStep.toString());
+    router.replace(`${pathname}?${_searchParams.toString()}`);
+  };
+  return setStep;
+}
+
+export function Setup(props: inferSSRProps<typeof getServerSideProps>) {
   const { t } = useLocale();
   const router = useRouter();
   const [value, setValue] = useState(props.isFreeLicense ? "FREE" : "EE");
   const isFreeLicense = value === "FREE";
   const [isEnabledEE, setIsEnabledEE] = useState(!props.isFreeLicense);
-  const setStep = (newStep: number) => {
-    router.replace(`/auth/setup?step=${newStep || 1}`, undefined, { shallow: true });
-  };
+  const setStep = useSetStep();
 
   const steps: React.ComponentProps<typeof WizardForm>["steps"] = [
     {
       title: t("administrator_user"),
       description: t("lets_create_first_administrator_user"),
-      content: (setIsLoading) => (
+      content: (setIsPending) => (
         <AdminUser
           onSubmit={() => {
-            setIsLoading(true);
+            setIsPending(true);
           }}
           onSuccess={() => {
             setStep(2);
           }}
           onError={() => {
-            setIsLoading(false);
+            setIsPending(false);
           }}
           userCount={props.userCount}
         />
@@ -49,7 +59,7 @@ export default function Setup(props: inferSSRProps<typeof getServerSideProps>) {
     {
       title: t("choose_a_license"),
       description: t("choose_license_description"),
-      content: (setIsLoading) => {
+      content: (setIsPending) => {
         return (
           <ChooseLicense
             id="wizard-step-2"
@@ -57,7 +67,7 @@ export default function Setup(props: inferSSRProps<typeof getServerSideProps>) {
             value={value}
             onChange={setValue}
             onSubmit={() => {
-              setIsLoading(true);
+              setIsPending(true);
               setStep(3);
             }}
           />
@@ -70,14 +80,14 @@ export default function Setup(props: inferSSRProps<typeof getServerSideProps>) {
     steps.push({
       title: t("step_enterprise_license"),
       description: t("step_enterprise_license_description"),
-      content: (setIsLoading) => {
+      content: (setIsPending) => {
         const currentStep = 3;
         return (
           <EnterpriseLicense
             id={`wizard-step-${currentStep}`}
             name={`wizard-step-${currentStep}`}
             onSubmit={() => {
-              setIsLoading(true);
+              setIsPending(true);
             }}
             onSuccess={() => {
               setStep(currentStep + 1);
@@ -94,23 +104,23 @@ export default function Setup(props: inferSSRProps<typeof getServerSideProps>) {
 
   steps.push({
     title: t("enable_apps"),
-    description: t("enable_apps_description"),
+    description: t("enable_apps_description", { appName: APP_NAME }),
     contentClassname: "!pb-0 mb-[-1px]",
-    content: (setIsLoading) => {
+    content: (setIsPending) => {
       const currentStep = isFreeLicense ? 3 : 4;
       return (
         <AdminAppsList
           id={`wizard-step-${currentStep}`}
           name={`wizard-step-${currentStep}`}
           classNames={{
-            form: "mb-4 rounded-md bg-white px-0 pt-0 md:max-w-full",
+            form: "mb-4 rounded-md bg-default px-0 pt-0 md:max-w-full",
             appCategoryNavigationContainer: "max-h-[400px] overflow-y-auto md:p-4",
             verticalTabsItem: "!w-48 md:p-4",
           }}
           baseURL={`/auth/setup?step=${currentStep}`}
           useQueryParam={true}
           onSubmit={() => {
-            setIsLoading(true);
+            setIsPending(true);
             router.replace("/");
           }}
         />
@@ -121,7 +131,7 @@ export default function Setup(props: inferSSRProps<typeof getServerSideProps>) {
   return (
     <>
       <Meta title={t("setup")} description={t("setup_description")} />
-      <main className="flex items-center bg-gray-100 print:h-full md:h-screen">
+      <main className="bg-subtle flex items-center print:h-full md:h-screen">
         <WizardForm
           href="/auth/setup"
           steps={steps}
@@ -135,48 +145,8 @@ export default function Setup(props: inferSSRProps<typeof getServerSideProps>) {
   );
 }
 
-export const getServerSideProps = async (context: GetServerSidePropsContext) => {
-  const { req, res } = context;
+Setup.isThemeSupported = false;
+Setup.PageWrapper = PageWrapper;
+export default Setup;
 
-  const ssr = await ssrInit(context);
-  const userCount = await prisma.user.count();
-
-  const session = await getServerSession({ req, res });
-
-  if (session?.user.role && session?.user.role !== UserPermissionRole.ADMIN) {
-    return {
-      redirect: {
-        destination: `/404`,
-        permanent: false,
-      },
-    };
-  }
-
-  let deploymentKey = await getDeploymentKey(prisma);
-
-  // Check existant CALCOM_LICENSE_KEY env var and acccount for it
-  if (!!process.env.CALCOM_LICENSE_KEY && !deploymentKey) {
-    await prisma.deployment.upsert({
-      where: { id: 1 },
-      update: {
-        licenseKey: process.env.CALCOM_LICENSE_KEY,
-        agreedLicenseAt: new Date(),
-      },
-      create: {
-        licenseKey: process.env.CALCOM_LICENSE_KEY,
-        agreedLicenseAt: new Date(),
-      },
-    });
-    deploymentKey = await getDeploymentKey(prisma);
-  }
-
-  const isFreeLicense = deploymentKey === "";
-
-  return {
-    props: {
-      trpcState: ssr.dehydrate(),
-      isFreeLicense,
-      userCount,
-    },
-  };
-};
+export { getServerSideProps };

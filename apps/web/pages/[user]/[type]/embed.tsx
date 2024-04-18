@@ -1,21 +1,18 @@
-import type { GetStaticPropsContext } from "next";
+import { type AppProps } from "@lib/app-providers";
+import withEmbedSsr from "@lib/withEmbedSsr";
 
-import { getStaticProps as _getStaticProps } from "../[type]";
+import PageWrapper, { type CalPageWrapper } from "@components/PageWrapper";
 
-export { getStaticPaths } from "../[type]";
+import TypePage from "~/users/views/users-type-public-view";
+import { getServerSideProps as _getServerSideProps } from "~/users/views/users-type-public-view.getServerSideProps";
 
-export { default } from "../[type]";
+export const getServerSideProps = withEmbedSsr(_getServerSideProps);
 
-export const getStaticProps = async (context: GetStaticPropsContext) => {
-  const staticResponse = await _getStaticProps(context);
-  if (staticResponse.notFound) {
-    return staticResponse;
-  }
-  return {
-    ...staticResponse,
-    props: {
-      ...staticResponse.props,
-      isEmbed: true,
-    },
-  };
+const Type = TypePage as unknown as CalPageWrapper & {
+  isBookingPage: AppProps["Component"]["isBookingPage"];
 };
+
+Type.isBookingPage = true;
+Type.PageWrapper = PageWrapper;
+
+export default Type;

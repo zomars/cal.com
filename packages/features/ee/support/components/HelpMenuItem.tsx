@@ -3,12 +3,14 @@ import { useChat } from "react-live-chat-loader";
 
 import classNames from "@calcom/lib/classNames";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
+import { localStorage } from "@calcom/lib/webstorage";
 import { trpc } from "@calcom/trpc/react";
-import { Button, showToast } from "@calcom/ui";
-import { FiExternalLink, FiAlertTriangle } from "@calcom/ui/components/icon";
+import { Button, showToast, TextArea } from "@calcom/ui";
+import { Icon } from "@calcom/ui";
 
 import { useFreshChat } from "../lib/freshchat/FreshChatProvider";
 import { isFreshChatEnabled } from "../lib/freshchat/FreshChatScript";
+import { isInterComEnabled, useIntercom } from "../lib/intercom/useIntercom";
 import ContactMenuItem from "./ContactMenuItem";
 
 interface HelpMenuItemProps {
@@ -17,11 +19,20 @@ interface HelpMenuItemProps {
 
 export default function HelpMenuItem({ onHelpItemSelect }: HelpMenuItemProps) {
   const [rating, setRating] = useState<null | string>(null);
+  const [showIntercom, setShowIntercom] = useState<boolean>(
+    localStorage.getItem("showIntercom") === "false" ? false : true
+  );
+  const { open, shutdown } = useIntercom();
   const [comment, setComment] = useState("");
   const [disableSubmit, setDisableSubmit] = useState(true);
   const [active, setActive] = useState(false);
   const [, loadChat] = useChat();
   const { t } = useLocale();
+
+  const toggleIntercom = (value: boolean) => {
+    setShowIntercom(value);
+    localStorage.setItem("showIntercom", String(value));
+  };
 
   const { setActive: setFreshChat } = useFreshChat();
 
@@ -43,32 +54,20 @@ export default function HelpMenuItem({ onHelpItemSelect }: HelpMenuItemProps) {
   };
 
   return (
-    <div className="w-full rounded-md border-gray-300 bg-white">
+    <div className="bg-default border-default w-full rounded-md">
       <div className="w-full py-5">
-        <p className="mb-1 px-5 text-gray-500">{t("resources").toUpperCase()}</p>
+        <p className="text-subtle mb-1 px-5">{t("resources").toUpperCase()}</p>
         <a
           onClick={() => onHelpItemSelect()}
           href="https://cal.com/docs/"
           target="_blank"
-          className="flex w-full px-5 py-2 pr-4 text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+          className="hover:bg-subtle hover:text-emphasis text-default flex w-full px-5 py-2 pr-4 text-sm font-medium"
           rel="noreferrer">
-          {t("support_documentation")}
-          <FiExternalLink
+          {t("documentation")}
+          <Icon
+            name="external-link"
             className={classNames(
-              "text-gray-400 group-hover:text-gray-500",
-              "ml-1 mt-px h-4 w-4 flex-shrink-0 ltr:mr-3"
-            )}
-          />
-        </a>
-        <a
-          href="https://developer.cal.com/"
-          target="_blank"
-          className="flex w-full px-5 py-2 pr-4 text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-          rel="noreferrer">
-          {t("developer_documentation")}
-          <FiExternalLink
-            className={classNames(
-              "text-gray-400 group-hover:text-gray-500",
+              "group-hover:text-subtle text-muted",
               "ml-1 mt-px h-4 w-4 flex-shrink-0 ltr:mr-3"
             )}
           />
@@ -77,18 +76,12 @@ export default function HelpMenuItem({ onHelpItemSelect }: HelpMenuItemProps) {
           <ContactMenuItem onHelpItemSelect={onHelpItemSelect} />
         </div>
       </div>
-
-      <hr className="bg-gray-200 " />
+      <hr className="border-muted" />
       <div className="w-full p-5">
-        <p className="mb-1 text-gray-500">{t("feedback").toUpperCase()}</p>
-        <p className="flex w-full py-2 text-sm font-medium text-gray-700">{t("comments")}</p>
-        <textarea
-          id="comment"
-          name="comment"
-          rows={3}
-          onChange={(event) => setComment(event.target.value)}
-          className="my-1 block w-full rounded-sm border-gray-300 py-2 pb-2 text-sm"
-        />
+        <p className="text-subtle mb-1">{t("feedback").toUpperCase()}</p>
+        <p className="text-default flex w-full py-2 text-sm font-medium">{t("comments")}</p>
+
+        <TextArea id="comment" name="comment" rows={3} onChange={(event) => setComment(event.target.value)} />
 
         <div className="my-3 flex justify-end">
           <button
@@ -178,7 +171,7 @@ export default function HelpMenuItem({ onHelpItemSelect }: HelpMenuItemProps) {
         <div className="my-2 flex justify-end">
           <Button
             disabled={disableSubmit}
-            loading={mutation.isLoading}
+            loading={mutation.isPending}
             onClick={async () => {
               if (rating && comment) {
                 await sendFeedback(rating, comment);
@@ -188,9 +181,9 @@ export default function HelpMenuItem({ onHelpItemSelect }: HelpMenuItemProps) {
           </Button>
         </div>
         {mutation.isError && (
-          <div className="mb-4 flex bg-red-100 p-4 text-sm text-red-700">
+          <div className="bg-error mb-4 flex p-4 text-sm text-red-700">
             <div className="flex-shrink-0">
-              <FiAlertTriangle className="h-5 w-5" />
+              <Icon name="triangle-alert" className="h-5 w-5" />
             </div>
             <div className="ml-3 flex-grow">
               <p className="font-medium">{t("feedback_error")}</p>
@@ -199,17 +192,60 @@ export default function HelpMenuItem({ onHelpItemSelect }: HelpMenuItemProps) {
           </div>
         )}
       </div>
-      <div className="w-full bg-neutral-50 p-5 text-gray-500">
+      {/* visible on desktop */}
+      <div className="text-subtle bg-muted hidden w-full flex-col p-5 md:block">
+        <p className="">{showIntercom ? t("no_support_needed") : t("specific_issue")}</p>
+        <button
+          className="hover:text-emphasis text-defualt font-medium underline"
+          onClick={async () => {
+            setActive(true);
+            if (showIntercom) {
+              if (isFreshChatEnabled) {
+                setFreshChat(false);
+              } else if (isInterComEnabled) {
+                shutdown();
+              }
+              toggleIntercom(false);
+            } else {
+              if (isFreshChatEnabled) {
+                setFreshChat(true);
+              } else if (isInterComEnabled) {
+                await open();
+              } else {
+                loadChat({ open: true });
+              }
+              toggleIntercom(true);
+            }
+            onHelpItemSelect();
+          }}>
+          {showIntercom ? t("hide_support") : t("contact_support")}
+        </button>
+        <span> {t("or").toLowerCase()} </span>
+        <a
+          onClick={() => onHelpItemSelect()}
+          className="hover:text-emphasis text-defualt font-medium underline"
+          href="https://cal.com/docs"
+          target="_blank"
+          rel="noreferrer">
+          {t("browse_our_docs")}
+        </a>
+        .
+      </div>
+      {/* visible on mobile */}
+      <div className="text-subtle bg-muted w-full p-5 md:hidden">
         <p className="">{t("specific_issue")}</p>
         <button
-          className="font-medium underline hover:text-gray-700"
-          onClick={() => {
+          className="hover:text-emphasis text-defualt font-medium underline"
+          onClick={async () => {
             setActive(true);
             if (isFreshChatEnabled) {
               setFreshChat(true);
+            } else if (isInterComEnabled) {
+              await open();
             } else {
               loadChat({ open: true });
             }
+
             onHelpItemSelect();
           }}>
           {t("contact_support")}
@@ -217,8 +253,8 @@ export default function HelpMenuItem({ onHelpItemSelect }: HelpMenuItemProps) {
         <span> {t("or").toLowerCase()} </span>
         <a
           onClick={() => onHelpItemSelect()}
-          className="font-medium underline hover:text-gray-700"
-          href="https://cal.com/docs/"
+          className="hover:text-emphasis text-defualt font-medium underline"
+          href="https://cal.com/docs"
           target="_blank"
           rel="noreferrer">
           {t("browse_our_docs")}

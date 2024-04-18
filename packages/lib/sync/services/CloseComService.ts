@@ -1,5 +1,3 @@
-import { MembershipRole } from "@prisma/client";
-
 import type { CloseComFieldOptions, CloseComLead } from "@calcom/lib/CloseCom";
 import CloseCom from "@calcom/lib/CloseCom";
 import { getCloseComContactIds, getCloseComLeadId, getCustomFieldsIds } from "@calcom/lib/CloseComeUtils";
@@ -8,6 +6,7 @@ import type { TeamInfoType } from "@calcom/lib/sync/ISyncService";
 import SyncServiceCore from "@calcom/lib/sync/ISyncService";
 import type { ConsoleUserInfoType, WebUserInfoType } from "@calcom/lib/sync/ISyncService";
 import type ISyncService from "@calcom/lib/sync/ISyncService";
+import { MembershipRole } from "@calcom/prisma/enums";
 
 // Cal.com Custom Contact Fields
 const calComCustomContactFields: CloseComFieldOptions = [
@@ -26,7 +25,7 @@ export default class CloseComService extends SyncServiceCore implements ISyncSer
   protected declare service: CloseCom;
 
   constructor() {
-    super(serviceName, CloseCom, logger.getChildLogger({ prefix: [`[[sync] ${serviceName}`] }));
+    super(serviceName, CloseCom, logger.getSubLogger({ prefix: [`[[sync] ${serviceName}`] }));
   }
 
   upsertAnyUser = async (

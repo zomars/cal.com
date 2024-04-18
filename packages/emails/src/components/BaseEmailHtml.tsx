@@ -4,7 +4,8 @@ import EmailBodyLogo from "./EmailBodyLogo";
 import EmailHead from "./EmailHead";
 import EmailScheduledBodyHeaderContent from "./EmailScheduledBodyHeaderContent";
 import EmailSchedulingBodyDivider from "./EmailSchedulingBodyDivider";
-import EmailSchedulingBodyHeader, { BodyHeadType } from "./EmailSchedulingBodyHeader";
+import type { BodyHeadType } from "./EmailSchedulingBodyHeader";
+import EmailSchedulingBodyHeader from "./EmailSchedulingBodyHeader";
 import RawHtml from "./RawHtml";
 import Row from "./Row";
 
@@ -20,8 +21,9 @@ export const BaseEmailHtml = (props: {
   callToAction?: React.ReactNode;
   subject: string;
   title?: string;
-  subtitle?: React.ReactNode;
+  subtitle?: React.ReactNode | string;
   headerType?: BodyHeadType;
+  hideLogo?: boolean;
 }) => {
   return (
     <Html>
@@ -195,7 +197,7 @@ export const BaseEmailHtml = (props: {
               </Row>
             </div>
           </div>
-          <EmailBodyLogo />
+          {!Boolean(props.hideLogo) && <EmailBodyLogo />}
           <RawHtml html="<!--[if mso | IE]></td></tr></table><![endif]-->" />
         </div>
       </body>

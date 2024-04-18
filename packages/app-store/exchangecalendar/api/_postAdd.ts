@@ -8,7 +8,7 @@ import { defaultResponder } from "@calcom/lib/server";
 import prisma from "@calcom/prisma";
 
 import checkSession from "../../_utils/auth";
-import { ExchangeAuthentication } from "../enums";
+import { ExchangeAuthentication, ExchangeVersion } from "../enums";
 import { CalendarService } from "../lib";
 
 const formSchema = z
@@ -17,6 +17,7 @@ const formSchema = z
     username: z.string().email(),
     password: z.string(),
     authenticationMethod: z.number().default(ExchangeAuthentication.STANDARD),
+    exchangeVersion: z.number().default(ExchangeVersion.Exchange2016),
     useCompression: z.boolean().default(false),
   })
   .strict();
@@ -29,12 +30,13 @@ export async function getHandler(req: NextApiRequest, res: NextApiResponse) {
     type: "exchange_calendar",
     key: encrypted,
     userId: session.user?.id,
+    teamId: null,
     appId: "exchange",
     invalid: false,
   };
 
   try {
-    const service = new CalendarService({ id: 0, ...data });
+    const service = new CalendarService({ id: 0, user: { email: session.user.email || "" }, ...data });
     await service?.listCalendars();
     await prisma.credential.create({ data });
   } catch (reason) {

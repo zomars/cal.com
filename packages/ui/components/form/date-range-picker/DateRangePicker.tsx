@@ -2,7 +2,7 @@
 import "@wojtekmaj/react-daterange-picker/dist/DateRangePicker.css";
 import PrimitiveDateRangePicker from "@wojtekmaj/react-daterange-picker/dist/entry.nostyle";
 
-import { FiArrowRight, FiCalendar, FiChevronLeft, FiChevronRight } from "../../icon";
+import { Icon } from "../../..";
 import "./styles.css";
 
 type Props = {
@@ -17,16 +17,16 @@ const DateRangePicker = ({ disabled, startDate, endDate, onDatesChange }: Props)
     <>
       <PrimitiveDateRangePicker
         disabled={disabled || false}
-        className="rounded-sm border-gray-300 text-sm"
+        className="border-default rounded-sm text-sm"
         clearIcon={null}
-        calendarIcon={<FiCalendar className="h-4 w-4 text-gray-500" />}
-        rangeDivider={<FiArrowRight className="h-4 w-4 text-gray-400 ltr:mr-2 rtl:ml-2" />}
+        calendarIcon={<Icon name="calendar" className="text-subtle h-4 w-4" />}
+        rangeDivider={<Icon name="arrow-right" className="text-muted h-4 w-4 ltr:mr-2 rtl:ml-2" />}
         value={[startDate, endDate]}
         onChange={([startDate, endDate]: [Date, Date]) => {
           if (typeof onDatesChange === "function") onDatesChange({ startDate, endDate });
         }}
-        nextLabel={<FiChevronRight className="h-4 w-4 text-gray-500" />}
-        prevLabel={<FiChevronLeft className="h-4 w-4 text-gray-500" />}
+        nextLabel={<Icon name="chevron-right" className="text-subtle h-4 w-4" />}
+        prevLabel={<Icon name="chevron-left" className="text-subtle h-4 w-4" />}
       />
     </>
   );

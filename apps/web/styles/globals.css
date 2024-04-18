@@ -1,19 +1,119 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/**
+* Add css variables here as well for light mode in addition to tailwind.config to avoid FOUC
+*/
+:root {
+  /* background */
 
+  --cal-bg-emphasis: hsla(220,13%,91%,1);
+  --cal-bg: hsla(0,0%,100%,1);
+  --cal-bg-subtle: hsla(220, 14%, 96%,1);
+  --cal-bg-muted: hsla(210,20%,98%,1);
+  --cal-bg-inverted: hsla(0,0%,6%,1);
 
+  /* background -> components*/
+  --cal-bg-info: hsla(218,83%,98%,1);
+  --cal-bg-success: hsla(134,76%,94%,1);
+  --cal-bg-attention: hsla(37, 86%, 92%, 1);
+  --cal-bg-error: hsla(3,66%,93%,1);
+  --cal-bg-dark-error: hsla(2, 55%, 30%, 1);
+
+  /* Borders */
+  --cal-border-emphasis: hsla(218, 11%, 65%, 1);
+  --cal-border: hsla(216, 12%, 84%, 1);
+  --cal-border-subtle: hsla(220, 13%, 91%, 1);
+  --cal-border-booker: #e5e7eb;
+  --cal-border-muted: hsla(220, 14%, 96%, 1);
+  --cal-border-error: hsla(4, 63%, 41%, 1);
+  --cal-border-focus: hsla(0, 0%, 10%, 1);
+
+  /* Content/Text */
+  --cal-text-emphasis: hsla(217, 19%, 27%, 1);
+  --cal-text: hsla(217, 19%, 27%, 1);
+  --cal-text-subtle: hsla(220, 9%, 46%, 1);
+  --cal-text-muted: hsla(218, 11%, 65%, 1);
+  --cal-text-inverted: hsla(0, 0%, 100%, 1);
+
+  /* Content/Text -> components */
+  --cal-text-info: hsla(228, 56%, 33%, 1);
+  --cal-text-success: hsla(133, 34%, 24%, 1);
+  --cal-text-attention: hsla(16, 62%, 28%, 1);
+  --cal-text-error: hsla(2, 55%, 30%, 1);
+
+  /* Brand shinanigans
+      -> These will be computed for the users theme at runtime.
+    */
+  --cal-brand: hsla(221, 39%, 11%, 1);
+  --cal-brand-emphasis: hsla(0, 0%, 6%, 1);
+  --cal-brand-text: hsla(0, 0%, 100%, 1);
+}
+.dark {
+  /* background */
+
+  --cal-bg-emphasis: hsla(0, 0%, 25%, 1);
+  --cal-bg: hsla(0, 0%, 10%, 1);
+  --cal-bg-subtle: hsla(0, 0%, 18%, 1);
+  --cal-bg-muted: hsla(0, 0%, 12%, 1);
+  --cal-bg-inverted: hsla(220, 14%, 96%, 1);
+
+  /* background -> components*/
+  --cal-bg-info: hsla(228, 56%, 33%, 1);
+  --cal-bg-success: hsla(133, 34%, 24%, 1);
+  --cal-bg-attention: hsla(16, 62%, 28%, 1);
+  --cal-bg-error: hsla(2, 55%, 30%, 1);
+  --cal-bg-dark-error: hsla(2, 55%, 30%, 1);
+
+  /* Borders */
+  --cal-border-emphasis: hsla(0, 0%, 46%, 1);
+  --cal-border: hsla(0, 0%, 34%, 1);
+  --cal-border-subtle: hsla(0, 0%, 22%, 1);
+  --cal-border-booker: hsla(0, 0%, 22%, 1);
+  --cal-border-muted: hsla(0, 0%, 18%, 1);
+  --cal-border-error: hsla(4, 63%, 41%, 1);
+  --cal-border-focus: hsla(0, 0%, 100%, 1);
+
+  /* Content/Text */
+  --cal-text-emphasis: hsla(240, 20%, 99%, 1);
+  --cal-text: hsla(0, 0%, 84%, 1);
+  --cal-text-subtle: hsla(0, 0%, 65%, 1);
+  --cal-text-muted: hsla(0, 0%, 34%, 1);
+  --cal-text-inverted: hsla(0, 0%, 10%, 1);
+
+  /* Content/Text -> components */
+  --cal-text-info: hsla(218, 83%, 93%, 1);
+  --cal-text-success: hsla(134, 76%, 94%, 1);
+  --cal-text-attention: hsla(37, 86%, 92%, 1);
+  --cal-text-error: hsla(3, 66%, 93%, 1);
+
+  /* Brand shenanigans
+      -> These will be computed for the users theme at runtime.
+    */
+  --cal-brand: hsla(0, 0%, 100%, 1);
+  --cal-brand-emphasis: hsla(218, 11%, 65%, 1);
+  --cal-brand-text: hsla(0, 0%, 0%,1);
+}
+
+@layer base {
+  * {
+    @apply border-default
+  }
+}
+
+::-moz-selection {
+  color: var(--cal-brand-text);
+  background: var(--cal-brand);
+}
+
+::selection {
+  color: var(--cal-brand-text);
+  background: var(--cal-brand);
+}
 
 body  {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-}
-
-:root {
-  --brand-color: #292929;
-  --brand-text-color: #ffffff;
-  --brand-color-dark-mode: #fafafa;
-  --brand-text-color-dark-mode: #292929;
 }
 
 /*
@@ -25,7 +125,7 @@ body  {
 html.todesktop button,
 html.todesktop a,
 html.todesktop img,
-html.todesktop header{
+html.todesktop header {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -khtml-user-select: none;
@@ -36,74 +136,35 @@ html.todesktop header{
 }
 
 html.todesktop,
-html.todesktop div  {
+html.todesktop div {
   cursor: default !important;
 }
 
 /* make header draggable on desktop app */
-html.todesktop header{
+html.todesktop header {
   -webkit-app-region: drag;
 }
-html.todesktop header button{
+
+html.todesktop header button,
+html.todesktop header a {
   -webkit-app-region: no-drag;
 }
 
-html.todesktop .logo {
-  display: none;
+html.todesktop-platform-darwin.dark main.bg-default {
+  background: rgba(0, 0, 0, 0.6) !important;
 }
 
-.desktop-only {
-  display: none;
+html.todesktop-platform-darwin.light main.bg-default {
+  background: rgba(255, 255, 255, 0.8) !important;
 }
 
-html.todesktop .desktop-only {
-  display: block;
+html.todesktop.light {
+  --cal-bg-emphasis: hsla(0, 0%, 11%, 0.1);
 }
 
-html.todesktop .desktop-hidden {
-  display: none;
+html.todesktop.dark {
+  --cal-bg-emphasis: hsla(220, 2%, 26%, 0.3);
 }
-
-html.todesktop header {
-  margin-top: -14px;
-}
-
-html.todesktop header nav {
-  margin-top: 8px;
-}
-
-html.todesktop aside {
-  margin:0px -6px;
-}
-
-/* TODO: add "native" MacOS colors
-   requires darkmode for MacOS first
-
-html.todesktop .desktop-transparent{
-  background: transparent !important;
-  border: none !important;
-}
-
-html.todesktop aside a {
-  height: 28px;
-  padding: 0px 8px;
-  font-size: 12px;
-  color: #383438 !important
-}
-
-html.todesktop nav a:hover{
-  background-color: inherit !important
-}
-
-html.todesktop nav a[aria-current="page"]{
-  background: rgba(0, 0, 0, 0.1) !important;
-}
-
-html.todesktop nav a svg{
-  color: #0272F7 !important
-}
-*/
-
 
 /*
   Adds Utility to hide scrollbar to tailwind
@@ -111,16 +172,14 @@ html.todesktop nav a svg{
     https://github.com/tailwindlabs/tailwindcss/pull/5732
 */
 @layer utilities {
-  @variants responsive {
-    /* Chrome, Safari and Opera */
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
-    }
+  /* Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 
-    .no-scrollbar {
-      -ms-overflow-style: none; /* IE and Edge */
-      scrollbar-width: none; /* Firefox */
-    }
+  .no-scrollbar {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
   }
 }
 
@@ -148,39 +207,17 @@ select:focus {
   --tw-ring-color: var(--brand-color);
   border-color: var(--brand-color);
 }
-/*  https://stackoverflow.com/a/69308190 */
-input[type='text']:focus { box-shadow: none; }
-
 
 @layer components {
-  .scroll-bar{
-    @apply scrollbar-thin scrollbar-thumb-rounded-md dark:scrollbar-thumb-darkgray-300 scrollbar-thumb-gray-300 scrollbar-track-transparent
+  .scroll-bar {
+    @apply scrollbar-thin scrollbar-thumb-rounded-md dark:scrollbar-thumb-darkgray-300 scrollbar-thumb-gray-300 scrollbar-track-transparent;
   }
 }
 
-
-button[role="switch"][data-state="checked"] {
-  @apply bg-gray-900;
-}
 /* TODO: avoid global specific css */
 /* button[role="switch"][data-state="checked"] span {
   transform: translateX(16px);
 } */
-
-/* DateRangePicker */
-/*
-  TODO:: Remove on V2 launch
- */
-.react-daterange-picker > .react-daterange-picker__wrapper {
-  /* border consistent with other inputs */
-  @apply rounded-sm border-gray-300 px-2 py-1.5 text-sm lg:py-1;
-}
-
-.react-daterange-picker > .react-daterange-picker__wrapper input {
-  /* Makes sure the on-focus behaviour is like Cal.com's */
-  @apply my-0.5 h-auto rounded-sm py-0.5;
-}
-
 
 @layer components {
   /* slider */
@@ -207,18 +244,6 @@ button[role="switch"][data-state="checked"] {
   .slider .slider-thumb:focus {
     box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.2);
   }
-
-}
-
-/* !important to style multi-email input */
-::-moz-selection {
-  color: white;
-  background: black;
-}
-
-::selection {
-  color: white;
-  background: black;
 }
 
 /* hide chat bubble on mobile */
@@ -242,52 +267,7 @@ button[role="switch"][data-state="checked"] {
   }
 }
 
-.react-multi-email > [type="text"] {
-  @apply dark:placeholder:text-darkgray-600 focus:border-brand dark:border-darkgray-300 dark:text-white block w-full rounded-md border-gray-300 text-sm focus:ring-black disabled:bg-gray-200 disabled:hover:cursor-not-allowed dark:bg-transparent dark:selection:bg-green-500 disabled:dark:text-gray-500;
-}
-
-.react-multi-email [data-tag] {
-  box-shadow: none !important;
-  @apply dark:bg-brand my-1 inline-flex items-center rounded-md border border-transparent bg-gray-200 px-2 py-1 text-sm font-medium text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 ltr:mr-2 rtl:ml-2 dark:text-white;
-}
-
-.react-multi-email > span[data-placeholder] {
-  display: none;
-  position: absolute;
-  left: 0.8rem;
-  top: 0.75rem;
-  line-height: 1.25rem;
-  font-size: 0.875rem;
-}
-
-.react-multi-email.empty > span[data-placeholder] {
-  display: inline;
-  color: #646b7a;
-}
-
-.react-multi-email.focused > span[data-placeholder] {
-  display: none;
-}
-
-.react-multi-email > input {
-  width: 100% !important;
-  display: inline-block !important;
-  @apply mt-1;
-}
-
-.react-multi-email [data-tag] {
-  @apply my-1 inline-flex items-center rounded-md border border-transparent bg-gray-200 px-2 py-1 text-sm font-medium text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 ltr:mr-2 rtl:ml-2 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-700;
-}
-
-.react-multi-email [data-tag] [data-tag-item] {
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.react-multi-email [data-tag] [data-tag-handle] {
-  margin-left: 0.833em;
-  cursor: pointer;
-}
+/* TODO: implement styling for react-multi-email */
 
 /* !important to override react-dates */
 .DateRangePickerInput__withBorder {
@@ -380,27 +360,7 @@ button[role="switch"][data-state="checked"] {
   }
 }
 
-nav#nav--settings > a {
-  @apply flex items-center border-l-4 border-transparent px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50 hover:text-gray-900;
-}
-
-nav#nav--settings > a svg {
-  @apply mr-3 -ml-1 h-6 w-6 flex-shrink-0 text-gray-400 group-hover:text-gray-500;
-}
-
-nav#nav--settings > a.active {
-  @apply border-gray-500 bg-gray-50 text-gray-700 hover:bg-gray-50 hover:text-gray-700;
-}
-
-nav#nav--settings > a.active svg {
-  @apply text-gray-500;
-}
-
-hr {
-  @apply border-gray-200;
-}
-
-.text-white-important {
+.text-inverted-important {
   color: white !important;
 }
 
@@ -496,4 +456,18 @@ hr {
 
 ::-webkit-search-cancel-button {
   -webkit-appearance: none;
+}
+
+.react-tel-input .country-list .country:hover,
+.react-tel-input .country-list .country.highlight {
+  @apply !bg-emphasis;
+}
+
+.react-tel-input .flag-dropdown .selected-flag,
+.react-tel-input .flag-dropdown.open .selected-flag {
+  @apply !bg-default;
+}
+
+.react-tel-input .flag-dropdown {
+  @apply !border-r-default left-0.5 !border-y-0 !border-l-0;
 }

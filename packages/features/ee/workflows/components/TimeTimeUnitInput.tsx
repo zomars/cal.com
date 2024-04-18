@@ -1,22 +1,23 @@
 import { useState } from "react";
-import { UseFormReturn } from "react-hook-form";
+import type { UseFormReturn } from "react-hook-form";
 
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import {
   Dropdown,
+  DropdownItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownItem,
   DropdownMenuTrigger,
+  Icon,
   TextField,
 } from "@calcom/ui";
-import { FiChevronDown } from "@calcom/ui/components/icon";
 
 import { getWorkflowTimeUnitOptions } from "../lib/getOptions";
 import type { FormValues } from "../pages/workflow";
 
 type Props = {
   form: UseFormReturn<FormValues>;
+  disabled: boolean;
 };
 
 export const TimeTimeUnitInput = (props: Props) => {
@@ -33,18 +34,19 @@ export const TimeTimeUnitInput = (props: Props) => {
           type="number"
           min="1"
           label=""
+          disabled={props.disabled}
           defaultValue={form.getValues("time") || 24}
           className="-mt-2 rounded-r-none text-sm focus:ring-0"
           {...form.register("time", { valueAsNumber: true })}
           addOnSuffix={
             <Dropdown>
               <DropdownMenuTrigger asChild>
-                <button className="flex">
+                <button className="flex items-center">
                   <div className="mr-1 w-3/4">
                     {timeUnit ? t(`${timeUnit.toLowerCase()}_timeUnit`) : "undefined"}{" "}
                   </div>
                   <div className="w-1/4 pt-1">
-                    <FiChevronDown />
+                    <Icon name="chevron-down" />
                   </div>
                 </button>
               </DropdownMenuTrigger>

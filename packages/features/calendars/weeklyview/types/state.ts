@@ -1,6 +1,7 @@
-import { TimeRange } from "@calcom/types/schedule";
+import type { IFromUser, IToUser } from "@calcom/core/getUserAvailability";
+import type { TimeRange } from "@calcom/types/schedule";
 
-import { CalendarEvent } from "./events";
+import type { CalendarEvent } from "./events";
 
 export type View = "month" | "week" | "day";
 export type Hours =
@@ -50,6 +51,19 @@ export type CalendarPrivateActions = {
   setSelectedEvent: (event: CalendarEvent) => void;
   handleDateChange: (payload: "INCREMENT" | "DECREMENT") => void;
 };
+type TimeRangeExtended = TimeRange & {
+  away?: boolean;
+  fromUser?: IFromUser;
+  toUser?: IToUser;
+  reason?: string;
+  emoji?: string;
+};
+
+export type CalendarAvailableTimeslots = {
+  // Key is the date in YYYY-MM-DD format
+  // start and end are ISOstring
+  [key: string]: TimeRangeExtended[];
+};
 
 export type CalendarState = {
   /** @NotImplemented This in future will change the view to be daily/weekly/monthly  DAY/WEEK are supported currently however WEEK is the most adv.*/
@@ -62,6 +76,11 @@ export type CalendarState = {
    * @Note Ideally you should pass in a sorted array from the DB however, pass the prop `sortEvents` if this is not possible and we will sort this for you..
    */
   events: CalendarEvent[];
+  /**
+   * Instead of letting users choose any option, this will only show these timeslots.
+   * Users can not pick any time themselves but are restricted to the available options.
+   */
+  availableTimeslots?: CalendarAvailableTimeslots;
   /** Any time ranges passed in here will display as blocked on the users calendar. Note: Anything < than the current date automatically gets blocked. */
   blockingDates?: TimeRange[];
   /** Loading will only expect events to be loading. */
@@ -104,8 +123,12 @@ export type CalendarState = {
    * @Note It is recommended to sort the events before passing them into the scheduler - e.g. On DB level.
    */
   sortEvents?: boolean;
+  /**
+   * Optional boolean to  hide the main header. Default the header will be visible.
+   */
+  hideHeader?: boolean;
 };
 
-export type CalendarComponentProps = CalendarPublicActions & CalendarState;
+export type CalendarComponentProps = CalendarPublicActions & CalendarState & { isPending?: boolean };
 
 export type CalendarStoreProps = CalendarComponentProps & CalendarPrivateActions;

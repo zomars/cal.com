@@ -16,20 +16,25 @@ const Steps = (props: ISteps) => {
   } = props;
   return (
     <div className="mt-6 space-y-2">
-      <p className="text-xs font-medium text-gray-500 dark:text-white">{stepLabel(currentStep, maxSteps)}</p>
-      <div className="flex w-full space-x-2 rtl:space-x-reverse">
+      <p className="text-subtle text-xs font-medium">{stepLabel(currentStep, maxSteps)}</p>
+      <div data-testid="step-indicator-container" className="flex w-full space-x-2 rtl:space-x-reverse">
         {new Array(maxSteps).fill(0).map((_s, index) => {
           return index <= currentStep - 1 ? (
             <div
               key={`step-${index}`}
               onClick={() => navigateToStep(index)}
               className={classNames(
-                "h-1 w-full rounded-[1px] bg-black dark:bg-white",
+                "bg-inverted h-1 w-full rounded-[1px]",
                 index < currentStep - 1 ? "cursor-pointer" : ""
               )}
+              data-testid={`step-indicator-${index}`}
             />
           ) : (
-            <div key={`step-${index}`} className="h-1 w-full rounded-[1px] bg-black bg-opacity-25" />
+            <div
+              key={`step-${index}`}
+              className="bg-emphasis h-1 w-full rounded-[1px] opacity-25"
+              data-testid={`step-indicator-${index}`}
+            />
           );
         })}
       </div>

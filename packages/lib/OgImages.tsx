@@ -1,9 +1,10 @@
 import React from "react";
 
-import { CAL_URL, LOGO } from "./constants";
+import { CAL_URL, LOGO, WEBAPP_URL } from "./constants";
 
 // Ensures tw prop is typed.
 declare module "react" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface HTMLAttributes<T> {
     tw?: string;
   }
@@ -28,6 +29,10 @@ export interface GenericImageProps {
 
 export interface ScreenshotImageProps {
   image: string;
+  /**
+   * Fallback image to use if the image prop fails to load.
+   */
+  fallbackImage: string;
 }
 
 interface WrapperProps {
@@ -40,6 +45,8 @@ const joinMultipleNames = (names: string[] = []) => {
   const lastName = names.pop();
   return `${names.length > 0 ? `${names.join(", ")} & ${lastName}` : lastName}`;
 };
+
+const makeAbsoluteUrl = (url: string) => (/^https?:\/\//.test(url) ? url : `${CAL_URL}${url}`);
 
 /**
  * Test urls:
@@ -57,7 +64,7 @@ export const constructMeetingImage = (
     `?type=meeting`,
     `&title=${encodeURIComponent(title)}`,
     `&meetingProfileName=${encodeURIComponent(profile.name)}`,
-    profile.image && `&meetingImage=${encodeURIComponent(profile.image)}`,
+    profile.image && `&meetingImage=${encodeURIComponent(makeAbsoluteUrl(profile.image))}`,
     `${users.map((user) => `&names=${encodeURIComponent(user.name)}`).join("")}`,
     `${users.map((user) => `&usernames=${encodeURIComponent(user.username)}`).join("")}`,
     // Joining a multiline string for readability.
@@ -98,7 +105,7 @@ const Wrapper = ({ children, variant = "light", rotateBackground }: WrapperProps
     <img
       tw="flex absolute left-0 top-0 w-full h-[110%]"
       style={rotateBackground ? { transform: "rotate(180deg)" } : undefined}
-      src={`${CAL_URL}/social-bg-${variant}-lines.jpg`}
+      src={`${WEBAPP_URL}/social-bg-${variant}-lines.jpg`}
       alt="background"
       width="1200"
       height="600"
@@ -112,7 +119,7 @@ export const Meeting = ({ title, users = [], profile }: MeetingImageProps) => {
   // Users ALWAYS have an image (albeit a gray empty person avatar), so this mainly filters out
   // any non existing images for dynamic collectives, while at the same time removing them from
   // the names list, because the profile name of that event is a concatenation of all names.
-  const attendees = (profile?.image ? [profile, ...users] : users).filter(
+  const attendees = (profile.image ? [profile, ...users] : users).filter(
     (value, index, self) => self.findIndex((v) => v.name === value.name) == index
   );
 
@@ -133,8 +140,12 @@ export const Meeting = ({ title, users = [], profile }: MeetingImageProps) => {
     <Wrapper variant="dark">
       <div tw="h-full flex flex-col justify-start">
         <div tw="flex items-center justify-center" style={{ fontFamily: "cal", fontWeight: 300 }}>
-          <img src={`${CAL_URL}/${LOGO}`} width="350" alt="Logo" />
-          {avatars.length > 0 && <div tw="font-bold text-black text-[92px] mx-8 bottom-2">/</div>}
+          <img src={`${WEBAPP_URL}/${LOGO}`} width="350" alt="Logo" />
+          {avatars.length > 0 && (
+            <div style={{ color: "#111827" }} tw="font-bold text-[92px] mx-8 bottom-2">
+              /
+            </div>
+          )}
           <div tw="flex flex-row">
             {avatars.slice(0, 3).map((avatar) => (
               <img
@@ -146,13 +157,13 @@ export const Meeting = ({ title, users = [], profile }: MeetingImageProps) => {
               />
             ))}
             {avatars.length > 3 && (
-              <div tw="flex items-center justify-center w-[160px] h-[160px] rounded-full bg-black text-white text-[54px] font-bold">
+              <div tw="flex items-center justify-center w-[160px] h-[160px] rounded-full bg-black text-inverted text-[54px] font-bold">
                 <span tw="flex top-[-5px] left-[-5px]">+{avatars.length - 3}</span>
               </div>
             )}
           </div>
         </div>
-        <div tw="relative flex text-[54px] w-full flex-col text-black mt-auto">
+        <div style={{ color: "#111827" }} tw="relative flex text-[54px] w-full flex-col mt-auto">
           <div
             tw="flex w-[1040px] overflow-hidden"
             style={{ whiteSpace: "nowrap", fontFamily: "cal", textOverflow: "ellipsis" }}>
@@ -182,7 +193,7 @@ const VisualBlur = ({ visualSlug }: { visualSlug: string }) => {
         style={{
           filter: "blur(98px)",
           backgroundColor: "rgba(255, 255, 255, 0.7)",
-          backgroundImage: `url(${CAL_URL}${visualSlug})`,
+          backgroundImage: `url(${WEBAPP_URL}${visualSlug})`,
           backgroundSize: "400px 400px",
         }}
       />
@@ -193,7 +204,7 @@ const VisualBlur = ({ visualSlug }: { visualSlug: string }) => {
         style={{
           filter: "blur(150px)",
           backgroundColor: "rgba(255, 255, 255, 0.7)",
-          backgroundImage: `url(${CAL_URL}${visualSlug})`,
+          backgroundImage: `url(${WEBAPP_URL}${visualSlug})`,
           backgroundSize: "630px 630px",
         }}
       />
@@ -203,16 +214,16 @@ const VisualBlur = ({ visualSlug }: { visualSlug: string }) => {
 
 export const App = ({ name, description, slug }: AppImageProps) => (
   <Wrapper>
-    <img src={`${CAL_URL}/${LOGO}`} width="150" alt="Logo" tw="absolute right-[48px] top-[48px]" />
+    <img src={`${WEBAPP_URL}/${LOGO}`} width="150" alt="Logo" tw="absolute right-[48px] top-[48px]" />
 
     <VisualBlur visualSlug={slug} />
 
     <div tw="flex items-center w-full">
       <div tw="flex">
-        <img src={`${CAL_URL}${slug}`} alt="App icon" width="172" />
+        <img src={`${WEBAPP_URL}${slug}`} alt="App icon" width="172" />
       </div>
     </div>
-    <div tw="flex mt-auto w-full flex-col text-black">
+    <div style={{ color: "#111827" }} tw="flex mt-auto w-full flex-col">
       <div tw="flex text-[64px] mb-7" style={{ fontFamily: "cal", fontWeight: 600 }}>
         {name}
       </div>
@@ -227,10 +238,10 @@ export const Generic = ({ title, description }: GenericImageProps) => (
   <Wrapper>
     <div tw="h-full flex flex-col justify-start">
       <div tw="flex items-center justify-center" style={{ fontFamily: "cal", fontWeight: 300 }}>
-        <img src={`${CAL_URL}/cal-logo-word-black.svg`} width="350" alt="Logo" />
+        <img src={`${WEBAPP_URL}/cal-logo-word-black.svg`} width="350" alt="Logo" />
       </div>
 
-      <div tw="relative flex text-[54px] w-full flex-col text-black mt-auto">
+      <div style={{ color: "#111827" }} tw="relative flex text-[54px] w-full flex-col mt-auto">
         <div tw="flex w-[1040px]" style={{ fontFamily: "cal" }}>
           {title}
         </div>
@@ -242,17 +253,19 @@ export const Generic = ({ title, description }: GenericImageProps) => (
   </Wrapper>
 );
 
-export const ScreenShot = ({ image }: ScreenshotImageProps) => (
+export const ScreenShot = ({ image, fallbackImage }: ScreenshotImageProps) => (
   <Wrapper rotateBackground>
-    <div tw="h-full w-full flex flex-col justify-center items-center">
-      <img
-        src={image}
-        width="1024"
-        height="576"
-        alt="screenshot"
-        tw="rounded-2xl mt-[140px] object-cover"
-        style={{ boxShadow: "0 0 45px -3px rgba(0,0,0,.3)" }}
-      />
+    <div tw="relative h-full w-full flex flex-col justify-center items-center">
+      <div tw="relative mt-[140px] flex rounded-2xl" style={{ boxShadow: "0 0 45px -3px rgba(0,0,0,.3)" }}>
+        <img
+          src={fallbackImage}
+          tw="absolute inset-0 rounded-2xl"
+          width="1024"
+          height="576"
+          alt="screenshot"
+        />
+        <img src={image} width="1024" height="576" tw="rounded-2xl" alt="screenshot" />
+      </div>
     </div>
   </Wrapper>
 );

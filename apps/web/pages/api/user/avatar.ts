@@ -1,42 +1,119 @@
-import crypto from "crypto";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { z } from "zod";
 
+import {
+  orgDomainConfig,
+  whereClauseForOrgWithSlugOrRequestedSlug,
+} from "@calcom/features/ee/organizations/lib/orgDomains";
+import { AVATAR_FALLBACK } from "@calcom/lib/constants";
 import { getPlaceholderAvatar } from "@calcom/lib/defaultAvatarImage";
+import logger from "@calcom/lib/logger";
 import prisma from "@calcom/prisma";
 
-import { defaultAvatarSrc } from "@lib/profile";
-
+const log = logger.getSubLogger({ prefix: ["team/[slug]"] });
 const querySchema = z
   .object({
     username: z.string(),
     teamname: z.string(),
+    /**
+     * Passed when we want to fetch avatar of a particular organization
+     */
+    orgSlug: z.string(),
+    /**
+     * Allow fetching avatar of a particular organization
+     * Avatars being public, we need not worry about others accessing it.
+     */
+    orgId: z.string().transform((s) => Number(s)),
   })
   .partial();
 
 async function getIdentityData(req: NextApiRequest) {
-  const { username, teamname } = querySchema.parse(req.query);
+  const { username, teamname, orgId, orgSlug } = querySchema.parse(req.query);
+  const { currentOrgDomain, isValidOrgDomain } = orgDomainConfig(req);
+
+  const org = isValidOrgDomain ? currentOrgDomain : null;
+
+  const orgQuery = orgId
+    ? {
+        id: orgId,
+      }
+    : org
+    ? whereClauseForOrgWithSlugOrRequestedSlug(org)
+    : null;
 
   if (username) {
-    const user = await prisma.user.findUnique({
-      where: { username },
+    const users = await prisma.user.findMany({
+      where: {
+        ...(orgQuery
+          ? {
+              profiles: {
+                some: {
+                  username,
+                  organization: orgQuery,
+                },
+              },
+            }
+          : {
+              username,
+              // If a user is moved, it isn't actually available outside of the organization. So, for non-org domain check for movedToProfileId
+              movedToProfileId: null,
+            }),
+      },
       select: { avatar: true, email: true },
     });
+
+    if (users.length > 1) {
+      throw new Error(`More than one user found for username "${username}"`);
+    }
+    const [user] = users;
     return {
       name: username,
       email: user?.email,
       avatar: user?.avatar,
+      org,
     };
   }
+
   if (teamname) {
-    const team = await prisma.team.findUnique({
-      where: { slug: teamname },
+    const team = await prisma.team.findFirst({
+      where: {
+        slug: teamname,
+        parent: orgQuery,
+      },
       select: { logo: true },
     });
+
     return {
+      org,
       name: teamname,
       email: null,
-      avatar: team?.logo || getPlaceholderAvatar(null, teamname),
+      avatar: getPlaceholderAvatar(team?.logo, teamname),
+    };
+  }
+
+  if (orgSlug) {
+    const orgs = await prisma.team.findMany({
+      where: {
+        ...whereClauseForOrgWithSlugOrRequestedSlug(orgSlug),
+      },
+      select: {
+        slug: true,
+        logo: true,
+        name: true,
+      },
+    });
+
+    if (orgs.length > 1) {
+      // This should never happen, but instead of throwing error, we are just logging to be able to observe when it happens.
+      log.error("More than one organization found for slug", orgSlug);
+    }
+
+    const org = orgs[0];
+    return {
+      org: org?.slug,
+      name: org?.name,
+      email: null,
+      avatar: getPlaceholderAvatar(org?.logo, org?.name),
     };
   }
 }
@@ -46,24 +123,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const img = identity?.avatar;
   // If image isn't set or links to this route itself, use default avatar
   if (!img) {
+    if (identity?.org) {
+      res.setHeader("x-cal-org", identity.org);
+    }
     res.writeHead(302, {
-      Location: defaultAvatarSrc({
-        md5: crypto
-          .createHash("md5")
-          .update(identity?.email || "guest@example.com")
-          .digest("hex"),
-      }),
+      Location: AVATAR_FALLBACK,
     });
+
     return res.end();
   }
 
   if (!img.includes("data:image")) {
+    if (identity.org) {
+      res.setHeader("x-cal-org", identity.org);
+    }
     res.writeHead(302, { Location: img });
     return res.end();
   }
 
   const decoded = img.toString().replace("data:image/png;base64,", "").replace("data:image/jpeg;base64,", "");
   const imageResp = Buffer.from(decoded, "base64");
+  if (identity.org) {
+    res.setHeader("x-cal-org", identity.org);
+  }
   res.writeHead(200, {
     "Content-Type": "image/png",
     "Content-Length": imageResp.length,

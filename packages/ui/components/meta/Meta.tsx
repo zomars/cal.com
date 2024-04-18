@@ -1,5 +1,6 @@
 import Head from "next/head";
-import React, { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
+import type { ReactNode } from "react";
 
 import { APP_NAME } from "@calcom/lib/constants";
 
@@ -7,7 +8,8 @@ type MetaType = {
   title: string;
   description: string;
   backButton?: boolean;
-  CTA?: React.ReactNode;
+  CTA?: ReactNode;
+  borderInShellHeader?: boolean;
 };
 
 const initialMeta: MetaType = {
@@ -15,19 +17,20 @@ const initialMeta: MetaType = {
   description: "",
   backButton: false,
   CTA: null,
+  borderInShellHeader: true,
 };
 
 const MetaContext = createContext({
   meta: initialMeta,
   // eslint-disable-next-line @typescript-eslint/no-empty-function
-  setMeta: (newMeta: Partial<MetaType>) => {},
+  setMeta: (_newMeta: Partial<MetaType>) => {},
 });
 
 export function useMeta() {
   return useContext(MetaContext);
 }
 
-export function MetaProvider({ children }: { children: React.ReactNode }) {
+export function MetaProvider({ children }: { children: ReactNode }) {
   const [value, setValue] = useState(initialMeta);
   const setMeta = (newMeta: Partial<MetaType>) => {
     setValue((v) => ({ ...v, ...newMeta }));
@@ -43,13 +46,13 @@ export function MetaProvider({ children }: { children: React.ReactNode }) {
  * elsewhere (ie. on a Heading, Title, Subtitle, etc.)
  * @example <Meta title="Password" description="Manage settings for your account passwords" />
  */
-export default function Meta({ title, description, backButton, CTA }: MetaType) {
+export default function Meta({ title, description, backButton, CTA, borderInShellHeader }: MetaType) {
   const { setMeta, meta } = useMeta();
 
   /* @TODO: maybe find a way to have this data on first render to prevent flicker */
   useEffect(() => {
     if (meta.title !== title || meta.description !== description || meta.CTA !== CTA) {
-      setMeta({ title, description, backButton, CTA });
+      setMeta({ title, description, backButton, CTA, borderInShellHeader });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, description, backButton, CTA]);

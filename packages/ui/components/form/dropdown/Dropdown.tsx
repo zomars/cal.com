@@ -1,11 +1,10 @@
-import { CheckCircleIcon } from "@heroicons/react/outline";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import Link from "next/link";
 import type { ComponentProps } from "react";
 import { forwardRef } from "react";
 
 import { classNames } from "@calcom/lib";
-import type { SVGComponent } from "@calcom/types/SVGComponent";
+import { Icon, type IconName } from "@calcom/ui";
 
 import type { ButtonColor } from "../../button/Button";
 
@@ -18,7 +17,7 @@ export const DropdownMenuTrigger = forwardRef<HTMLButtonElement, DropdownMenuTri
       {...props}
       className={classNames(
         !props.asChild &&
-          `inline-flex items-center rounded-md bg-transparent px-3 py-2 text-sm font-medium text-gray-700 ring-0 hover:bg-gray-50 focus:bg-gray-100 group-hover:text-black ${className}`
+          `focus:bg-subtle hover:bg-muted text-default group-hover:text-emphasis inline-flex items-center rounded-md bg-transparent px-3 py-2 text-sm font-medium ring-0 ${className}`
       )}
       ref={forwardedRef}
     />
@@ -39,8 +38,9 @@ export const DropdownMenuContent = forwardRef<HTMLDivElement, DropdownMenuConten
         {...props}
         sideOffset={sideOffset}
         className={classNames(
-          "shadow-dropdown w-50 relative z-10 ml-1.5 origin-top-right rounded-md border border-gray-200 bg-white text-sm",
-          "[&>*:first-child]:mt-1 [&>*:last-child]:mb-1"
+          "shadow-dropdown w-50 bg-default border-subtle relative z-10 ml-1.5 origin-top-right rounded-md border text-sm",
+          "[&>*:first-child]:mt-1 [&>*:last-child]:mb-1",
+          props.className
         )}
         ref={forwardedRef}>
         {children}
@@ -52,14 +52,14 @@ DropdownMenuContent.displayName = "DropdownMenuContent";
 
 type DropdownMenuLabelProps = ComponentProps<(typeof DropdownMenuPrimitive)["Label"]>;
 export const DropdownMenuLabel = (props: DropdownMenuLabelProps) => (
-  <DropdownMenuPrimitive.Label {...props} className="px-3 py-2 text-gray-500" />
+  <DropdownMenuPrimitive.Label {...props} className="text-subtle px-3 py-2" />
 );
 
 type DropdownMenuItemProps = ComponentProps<(typeof DropdownMenuPrimitive)["CheckboxItem"]>;
 export const DropdownMenuItem = forwardRef<HTMLDivElement, DropdownMenuItemProps>(
   ({ className = "", ...props }, forwardedRef) => (
     <DropdownMenuPrimitive.Item
-      className={`focus:ring-brand-800 text-sm text-gray-700 ring-inset first-of-type:rounded-t-[inherit] last-of-type:rounded-b-[inherit] hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-1 ${className}`}
+      className={`focus:ring-brand-800 hover:bg-subtle hover:text-emphasis text-default text-sm ring-inset first-of-type:rounded-t-[inherit] last-of-type:rounded-b-[inherit] focus:outline-none focus:ring-1 ${className}`}
       {...props}
       ref={forwardedRef}
     />
@@ -73,10 +73,10 @@ type DropdownMenuCheckboxItemProps = ComponentProps<(typeof DropdownMenuPrimitiv
 export const DropdownMenuCheckboxItem = forwardRef<HTMLDivElement, DropdownMenuCheckboxItemProps>(
   ({ children, ...props }, forwardedRef) => {
     return (
-      <DropdownMenuPrimitive.CheckboxItem {...props} ref={forwardedRef}>
+      <DropdownMenuPrimitive.CheckboxItem {...props} ref={forwardedRef} className="">
         {children}
         <DropdownMenuPrimitive.ItemIndicator>
-          <CheckCircleIcon />
+          <Icon name="circle-check" />
         </DropdownMenuPrimitive.ItemIndicator>
       </DropdownMenuPrimitive.CheckboxItem>
     );
@@ -93,7 +93,7 @@ export const DropdownMenuRadioItem = forwardRef<HTMLDivElement, DropdownMenuRadi
       <DropdownMenuPrimitive.RadioItem {...props} ref={forwardedRef}>
         {children}
         <DropdownMenuPrimitive.ItemIndicator>
-          <CheckCircleIcon />
+          <Icon name="circle-check" />
         </DropdownMenuPrimitive.ItemIndicator>
       </DropdownMenuPrimitive.RadioItem>
     );
@@ -104,10 +104,12 @@ DropdownMenuRadioItem.displayName = "DropdownMenuRadioItem";
 type DropdownItemProps = {
   children: React.ReactNode;
   color?: ButtonColor;
-  StartIcon?: SVGComponent;
-  EndIcon?: SVGComponent;
+  StartIcon?: IconName;
+  CustomStartIcon?: React.ReactNode;
+  EndIcon?: IconName;
   href?: string;
   disabled?: boolean;
+  childrenClassName?: string;
 } & ButtonOrLinkProps;
 
 type ButtonOrLinkProps = ComponentProps<"button"> & ComponentProps<"a">;
@@ -129,19 +131,22 @@ export function ButtonOrLink({ href, ...props }: ButtonOrLinkProps) {
 }
 
 export const DropdownItem = (props: DropdownItemProps) => {
-  const { StartIcon, EndIcon, children, color, ...rest } = props;
+  const { CustomStartIcon, StartIcon, EndIcon, children, color, childrenClassName, ...rest } = props;
 
   return (
     <ButtonOrLink
       {...rest}
       className={classNames(
-        "inline-flex w-full items-center px-3 py-2 text-gray-700 hover:text-gray-900 disabled:cursor-not-allowed",
-        color === "destructive" ? "hover:bg-red-100 hover:text-red-700" : "hover:bg-gray-100"
+        "hover:text-emphasis text-default inline-flex w-full items-center space-x-2 px-3 py-2  disabled:cursor-not-allowed",
+        color === "destructive"
+          ? "hover:bg-error hover:text-red-700 dark:hover:text-red-100"
+          : "hover:bg-subtle",
+        props.className
       )}>
       <>
-        {StartIcon && <StartIcon className="h-4 w-4" />}
-        <div className="mx-3 text-sm font-medium leading-5">{children}</div>
-        {EndIcon && <EndIcon className="h-4 w-4" />}
+        {CustomStartIcon || (StartIcon && <Icon name={StartIcon} className="h-4 w-4" />)}
+        <div className={classNames("text-sm font-medium leading-5", childrenClassName)}>{children}</div>
+        {EndIcon && <Icon name={EndIcon} className="h-4 w-4" />}
       </>
     </ButtonOrLink>
   );
@@ -152,7 +157,7 @@ export const DropdownMenuSeparator = forwardRef<HTMLDivElement, DropdownMenuSepa
   ({ className = "", ...props }, forwardedRef) => {
     return (
       <DropdownMenuPrimitive.Separator
-        className={classNames("my-1 h-px bg-gray-200", className)}
+        className={classNames("bg-emphasis my-1 h-px", className)}
         {...props}
         ref={forwardedRef}
       />

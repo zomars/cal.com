@@ -1,25 +1,28 @@
-import debounce from "lodash/debounce";
-import type { GetServerSidePropsContext } from "next";
-import { getCsrfToken } from "next-auth/react";
-import { serverSideTranslations } from "next-i18next/serverSideTranslations";
+"use client";
+
+// eslint-disable-next-line no-restricted-imports
+import { debounce } from "lodash";
 import Link from "next/link";
-import { useRouter } from "next/router";
-import type { SyntheticEvent } from "react";
+import type { CSSProperties, SyntheticEvent } from "react";
 import React from "react";
 
-import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { Button, EmailField } from "@calcom/ui";
 
+import { type inferSSRProps } from "@lib/types/inferSSRProps";
+
+import PageWrapper from "@components/PageWrapper";
 import AuthContainer from "@components/ui/AuthContainer";
 
-export default function ForgotPassword({ csrfToken }: { csrfToken: string }) {
-  const { t, i18n } = useLocale();
+import { getServerSideProps } from "@server/lib/forgot-password/getServerSideProps";
+
+export default function ForgotPassword(props: inferSSRProps<typeof getServerSideProps>) {
+  const csrfToken = "csrfToken" in props ? (props.csrfToken as string) : undefined;
+  const { t } = useLocale();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<{ message: string } | null>(null);
   const [success, setSuccess] = React.useState(false);
   const [email, setEmail] = React.useState("");
-  const router = useRouter();
 
   const handleChange = (e: SyntheticEvent) => {
     const target = e.target as typeof e.target & { value: string };
@@ -30,7 +33,7 @@ export default function ForgotPassword({ csrfToken }: { csrfToken: string }) {
     try {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
-        body: JSON.stringify({ email: email, language: i18n.language }),
+        body: JSON.stringify({ email }),
         headers: {
           "Content-Type": "application/json",
         },
@@ -39,8 +42,6 @@ export default function ForgotPassword({ csrfToken }: { csrfToken: string }) {
       const json = await res.json();
       if (!res.ok) {
         setError(json);
-      } else if ("resetLink" in json) {
-        router.push(json.resetLink);
       } else {
         setSuccess(true);
       }
@@ -95,7 +96,7 @@ export default function ForgotPassword({ csrfToken }: { csrfToken: string }) {
       footerText={
         !success && (
           <>
-            <Link href="/auth/login" className="font-medium text-gray-900">
+            <Link href="/auth/login" className="text-emphasis font-medium">
               {t("back_to_signin")}
             </Link>
           </>
@@ -105,7 +106,18 @@ export default function ForgotPassword({ csrfToken }: { csrfToken: string }) {
       {!success && (
         <>
           <div className="space-y-6">{error && <p className="text-red-600">{error.message}</p>}</div>
-          <form className="space-y-6" onSubmit={handleSubmit} action="#">
+          <form
+            className="space-y-6"
+            onSubmit={handleSubmit}
+            action="#"
+            style={
+              {
+                "--cal-brand": "#111827",
+                "--cal-brand-emphasis": "#101010",
+                "--cal-brand-text": "white",
+                "--cal-brand-subtle": "#9CA3AF",
+              } as CSSProperties
+            }>
             <input name="csrfToken" type="hidden" defaultValue={csrfToken} hidden />
             <EmailField
               onChange={handleChange}
@@ -117,8 +129,9 @@ export default function ForgotPassword({ csrfToken }: { csrfToken: string }) {
             />
             <div className="space-y-2">
               <Button
-                className="w-full justify-center"
+                className="w-full justify-center dark:bg-white dark:text-black"
                 type="submit"
+                color="primary"
                 disabled={loading}
                 aria-label={t("request_password_reset")}
                 loading={loading}>
@@ -132,21 +145,6 @@ export default function ForgotPassword({ csrfToken }: { csrfToken: string }) {
   );
 }
 
-export const getServerSideProps = async (context: GetServerSidePropsContext) => {
-  const { req, res } = context;
+ForgotPassword.PageWrapper = PageWrapper;
 
-  const session = await getServerSession({ req, res });
-
-  if (session) {
-    res.writeHead(302, { Location: "/" });
-    res.end();
-    return { props: {} };
-  }
-
-  return {
-    props: {
-      csrfToken: await getCsrfToken(context),
-      ...(await serverSideTranslations(context.locale || "en", ["common"])),
-    },
-  };
-};
+export { getServerSideProps };

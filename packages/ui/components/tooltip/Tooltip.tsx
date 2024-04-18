@@ -1,7 +1,8 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import React from "react";
 
-import { classNames } from "@calcom/lib";
+import { useIsPlatform } from "@calcom/atoms/monorepo";
+import classNames from "@calcom/lib/classNames";
 
 export function Tooltip({
   children,
@@ -9,36 +10,43 @@ export function Tooltip({
   open,
   defaultOpen,
   onOpenChange,
+  delayDuration,
   side = "top",
   ...props
 }: {
   children: React.ReactNode;
   content: React.ReactNode;
+  delayDuration?: number;
   open?: boolean;
   defaultOpen?: boolean;
   side?: "top" | "right" | "bottom" | "left";
   onOpenChange?: (open: boolean) => void;
-}) {
+} & TooltipPrimitive.TooltipContentProps) {
+  const isPlatform = useIsPlatform();
+  const Content = (
+    <TooltipPrimitive.Content
+      {...props}
+      className={classNames(
+        "calcom-tooltip",
+        side === "top" && "-mt-7",
+        side === "right" && "ml-2",
+        "bg-inverted text-inverted relative z-50 rounded-md px-2 py-1 text-xs font-semibold shadow-lg",
+        props.className && `${props.className}`
+      )}
+      side={side}
+      align="center">
+      {content}
+    </TooltipPrimitive.Content>
+  );
+
   return (
     <TooltipPrimitive.Root
-      delayDuration={50}
+      delayDuration={delayDuration || 50}
       open={open}
       defaultOpen={defaultOpen}
       onOpenChange={onOpenChange}>
       <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
-      <TooltipPrimitive.Portal>
-        <TooltipPrimitive.Content
-          className={classNames(
-            side === "top" && "-mt-7",
-            side === "right" && "ml-2",
-            "relative rounded-md bg-gray-900 px-2 py-1 text-xs font-semibold text-white shadow-lg dark:bg-white dark:text-gray-600"
-          )}
-          side={side}
-          align="center"
-          {...props}>
-          {content}
-        </TooltipPrimitive.Content>
-      </TooltipPrimitive.Portal>
+      {isPlatform ? <>{Content}</> : <TooltipPrimitive.Portal>{Content}</TooltipPrimitive.Portal>}
     </TooltipPrimitive.Root>
   );
 }

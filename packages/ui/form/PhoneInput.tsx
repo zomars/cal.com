@@ -1,53 +1,87 @@
 import { isSupportedCountry } from "libphonenumber-js";
-import { useState } from "react";
-import BasePhoneInput from "react-phone-number-input";
-import type { Props, Country } from "react-phone-number-input";
-import "react-phone-number-input/style.css";
+import { useState, useEffect } from "react";
+import PhoneInput from "react-phone-input-2";
+import "react-phone-input-2/lib/style.css";
 
+import { classNames } from "@calcom/lib";
 import { trpc } from "@calcom/trpc/react";
 
-export type PhoneInputProps = Props<{
-  value: string;
+export type PhoneInputProps = {
+  value?: string;
   id?: string;
   placeholder?: string;
   required?: boolean;
   className?: string;
   name?: string;
-}>;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+};
 
-function PhoneInput({ name, className = "", onChange, ...rest }: PhoneInputProps) {
+function BasePhoneInput({ name, className = "", onChange, value, ...rest }: PhoneInputProps) {
   const defaultCountry = useDefaultCountry();
 
   return (
-    <BasePhoneInput
+    <PhoneInput
       {...rest}
-      international
-      defaultCountry={defaultCountry}
-      name={name}
-      onChange={onChange}
-      countrySelectProps={{ className: "text-black" }}
-      numberInputProps={{
-        className: "border-0 text-sm focus:ring-0 dark:bg-darkgray-100 dark:placeholder:text-darkgray-600",
+      value={value ? value.trim().replace(/^\+?/, "+") : undefined}
+      country={value ? undefined : defaultCountry}
+      enableSearch
+      disableSearchIcon
+      inputProps={{
+        name: name,
+        required: rest.required,
+        placeholder: rest.placeholder,
       }}
-      className={`${className} focus-within:border-brand dark:bg-darkgray-100 dark:border-darkgray-300 block w-full rounded-md rounded-sm border border border-gray-300 py-px pl-3 ring-black focus-within:ring-1 disabled:text-gray-500 disabled:opacity-50 dark:text-white dark:selection:bg-green-500 disabled:dark:text-gray-500`}
+      onChange={(value) => {
+        onChange(`+${value}`);
+      }}
+      containerClass={classNames(
+        "hover:border-emphasis dark:focus:border-emphasis border-default !bg-default rounded-md border focus-within:outline-none focus-within:ring-2 focus-within:ring-brand-default disabled:cursor-not-allowed",
+        className
+      )}
+      inputClass="text-sm focus:ring-0 !bg-default text-default"
+      buttonClass="text-emphasis !bg-default hover:!bg-emphasis"
+      searchClass="!text-default !bg-default hover:!bg-emphasis"
+      dropdownClass="!text-default !bg-default"
+      inputStyle={{ width: "inherit", border: 0 }}
+      searchStyle={{
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        padding: "6px 12px",
+        gap: "8px",
+        width: "296px",
+        height: "28px",
+        marginLeft: "-4px",
+      }}
+      dropdownStyle={{ width: "max-content" }}
     />
   );
 }
 
 const useDefaultCountry = () => {
-  const [defaultCountry, setDefaultCountry] = useState<Country>("US");
-  trpc.viewer.public.countryCode.useQuery(undefined, {
+  const [defaultCountry, setDefaultCountry] = useState("us");
+  const query = trpc.viewer.public.countryCode.useQuery(undefined, {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: false,
-    onSuccess: (data) => {
-      if (isSupportedCountry(data?.countryCode)) {
-        setDefaultCountry(data.countryCode as Country);
-      }
-    },
   });
+
+  useEffect(
+    function refactorMeWithoutEffect() {
+      const data = query.data;
+      if (!data?.countryCode) {
+        return;
+      }
+
+      isSupportedCountry(data?.countryCode)
+        ? setDefaultCountry(data.countryCode.toLowerCase())
+        : setDefaultCountry(navigator.language.split("-")[1]?.toLowerCase() || "us");
+    },
+    [query.data]
+  );
 
   return defaultCountry;
 };
 
-export default PhoneInput;
+export default BasePhoneInput;

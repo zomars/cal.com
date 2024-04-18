@@ -1,36 +1,41 @@
+"use client";
+
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 import type { Dispatch, SetStateAction } from "react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 import Shell from "@calcom/features/shell/Shell";
 import { classNames } from "@calcom/lib";
+import { WEBAPP_URL } from "@calcom/lib/constants";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
+import { useRouterQuery } from "@calcom/lib/hooks/useRouterQuery";
 import { HttpError } from "@calcom/lib/http-error";
 import { trpc } from "@calcom/trpc/react";
-import { AnimatedPopover, Avatar, CreateButton, showToast } from "@calcom/ui";
+import { AnimatedPopover, Avatar, CreateButtonWithTeamsList, showToast } from "@calcom/ui";
 
-import LicenseRequired from "../../common/components/v2/LicenseRequired";
+import { FilterResults } from "../../../filters/components/FilterResults";
+import { TeamsFilter } from "../../../filters/components/TeamsFilter";
+import { getTeamsFiltersFromQuery } from "../../../filters/lib/getTeamsFiltersFromQuery";
+import LicenseRequired from "../../common/components/LicenseRequired";
+import EmptyScreen from "../components/EmptyScreen";
 import SkeletonLoader from "../components/SkeletonLoaderList";
-import type { WorkflowType } from "../components/WorkflowListPage";
 import WorkflowList from "../components/WorkflowListPage";
 
 function WorkflowsPage() {
   const { t } = useLocale();
   const session = useSession();
   const router = useRouter();
-  const [checkedFilterItems, setCheckedFilterItems] = useState<{ userId: number | null; teamIds: number[] }>({
-    userId: session.data?.user.id || null,
-    teamIds: [],
+  const routerQuery = useRouterQuery();
+  const filters = getTeamsFiltersFromQuery(routerQuery);
+
+  const queryRes = trpc.viewer.workflows.filteredList.useQuery({
+    filters,
   });
-
-  const { data: allWorkflowsData, isLoading } = trpc.viewer.workflows.list.useQuery();
-
-  const [filteredWorkflows, setFilteredWorkflows] = useState<WorkflowType[]>([]);
 
   const createMutation = trpc.viewer.workflows.create.useMutation({
     onSuccess: async ({ workflow }) => {
-      await router.replace("/workflows/" + workflow.id);
+      await router.replace(`/workflows/${workflow.id}`);
     },
     onError: (err) => {
       if (err instanceof HttpError) {
@@ -39,113 +44,57 @@ function WorkflowsPage() {
       }
 
       if (err.data?.code === "UNAUTHORIZED") {
-        const message = `${err.data.code}: You are not able to create this workflow`;
+        const message = `${err.data.code}: ${t("error_workflow_unauthorized_create")}`;
         showToast(message, "error");
       }
     },
   });
 
-  const query = trpc.viewer.workflows.getByViewer.useQuery();
-
-  useEffect(() => {
-    const allWorkflows = allWorkflowsData?.workflows;
-    if (allWorkflows && allWorkflows.length > 0) {
-      const filtered = allWorkflows.filter((workflow) => {
-        if (checkedFilterItems.teamIds.includes(workflow.teamId || 0)) return workflow;
-        if (!workflow.teamId) {
-          if (!!workflow.userId && workflow.userId === checkedFilterItems.userId) return workflow;
-        }
-      });
-      setFilteredWorkflows(filtered);
-    } else {
-      setFilteredWorkflows([]);
-    }
-  }, [checkedFilterItems, allWorkflowsData]);
-
-  useEffect(() => {
-    if (session.status !== "loading" && !query.isLoading) {
-      if (!query.data) return;
-      setCheckedFilterItems({
-        userId: session.data?.user.id || null,
-        teamIds: query.data.profiles
-          .map((profile) => {
-            if (!!profile.teamId) {
-              return profile.teamId;
-            }
-          })
-          .filter((teamId): teamId is number => !!teamId),
-      });
-    }
-  }, [session.status, query.isLoading, allWorkflowsData]);
-
-  if (!query.data) return null;
-
-  const profileOptions = query.data.profiles
-    .filter((profile) => !profile.readOnly)
-    .map((profile) => {
-      return {
-        teamId: profile.teamId,
-        label: profile.name || profile.slug,
-        image: profile.image,
-        slug: profile.slug,
-      };
-    });
-
   return (
     <Shell
+      withoutMain={false}
       heading={t("workflows")}
-      title={t("workflows")}
       subtitle={t("workflows_to_automate_notifications")}
+      title="Workflows"
+      description="Create workflows to automate notifications and reminders."
+      hideHeadingOnMobile
       CTA={
-        query.data.profiles.length === 1 &&
-        session.data?.hasValidLicense &&
-        allWorkflowsData?.workflows &&
-        allWorkflowsData?.workflows.length > 0 ? (
-          <CreateButton
+        session.data?.hasValidLicense ? (
+          <CreateButtonWithTeamsList
             subtitle={t("new_workflow_subtitle").toUpperCase()}
-            options={profileOptions}
             createFunction={(teamId?: number) => {
               createMutation.mutate({ teamId });
             }}
-            isLoading={createMutation.isLoading}
+            isPending={createMutation.isPending}
             disableMobileButton={true}
+            onlyShowWithNoTeams={true}
           />
-        ) : (
-          <></>
-        )
+        ) : null
       }>
       <LicenseRequired>
-        {isLoading ? (
-          <SkeletonLoader />
-        ) : (
-          <>
-            {query.data.profiles.length > 1 &&
-              allWorkflowsData?.workflows &&
-              allWorkflowsData.workflows.length > 0 && (
-                <div className="mb-4 flex">
-                  <Filter
-                    profiles={query.data.profiles}
-                    checked={checkedFilterItems}
-                    setChecked={setCheckedFilterItems}
-                  />
-                  <div className="ml-auto">
-                    <CreateButton
-                      subtitle={t("new_workflow_subtitle").toUpperCase()}
-                      options={profileOptions}
-                      createFunction={(teamId?: number) => createMutation.mutate({ teamId })}
-                      isLoading={createMutation.isLoading}
-                      disableMobileButton={true}
-                    />
-                  </div>
-                </div>
-              )}
-            <WorkflowList
-              workflows={filteredWorkflows}
-              profileOptions={profileOptions}
-              hasNoWorkflows={!allWorkflowsData?.workflows || allWorkflowsData?.workflows.length === 0}
-            />
-          </>
-        )}
+        <>
+          {queryRes.data?.totalCount ? (
+            <div className="flex">
+              <TeamsFilter />
+              <div className="ml-auto">
+                <CreateButtonWithTeamsList
+                  subtitle={t("new_workflow_subtitle").toUpperCase()}
+                  createFunction={(teamId?: number) => createMutation.mutate({ teamId })}
+                  isPending={createMutation.isPending}
+                  disableMobileButton={true}
+                  onlyShowWithTeams={true}
+                />
+              </div>
+            </div>
+          ) : null}
+          <FilterResults
+            queryRes={queryRes}
+            emptyScreen={<EmptyScreen isFilteredView={false} />}
+            noResultsScreen={<EmptyScreen isFilteredView={true} />}
+            SkeletonLoader={SkeletonLoader}>
+            <WorkflowList workflows={queryRes.data?.filtered} />
+          </FilterResults>
+        </>
       </LicenseRequired>
     </Shell>
   );
@@ -157,6 +106,7 @@ const Filter = (props: {
     slug: string | null;
     name: string | null;
     teamId: number | null | undefined;
+    image?: string | undefined | null;
   }[];
   checked: {
     userId: number | null;
@@ -171,7 +121,9 @@ const Filter = (props: {
 }) => {
   const session = useSession();
   const userId = session.data?.user.id || 0;
-  const userName = session.data?.user.name || "";
+  const user = session.data?.user.name || "";
+  const userName = session.data?.user.username;
+  const userAvatar = `${WEBAPP_URL}/${userName}/avatar.png`;
 
   const teams = props.profiles.filter((profile) => !!profile.teamId);
   const { checked, setChecked } = props;
@@ -181,25 +133,24 @@ const Filter = (props: {
   return (
     <div className={classNames("-mb-2", noFilter ? "w-16" : "w-[100px]")}>
       <AnimatedPopover text={noFilter ? "All" : "Filtered"}>
-        <div className="item-center flex px-4 py-[6px] focus-within:bg-gray-100 hover:cursor-pointer hover:bg-gray-50">
+        <div className="item-center focus-within:bg-subtle hover:bg-muted flex px-4 py-[6px] hover:cursor-pointer">
           <Avatar
-            imageSrc=""
+            imageSrc={userAvatar || ""}
             size="sm"
-            alt={`${userName} Avatar`}
-            gravatarFallbackMd5="fallback"
+            alt={`${user} Avatar`}
             className="self-center"
             asChild
           />
           <label
             htmlFor="yourWorkflows"
-            className="ml-2 mr-auto self-center truncate text-sm font-medium text-gray-700">
-            {userName}
+            className="text-default ml-2 mr-auto self-center truncate text-sm font-medium">
+            {user}
           </label>
 
           <input
             id="yourWorkflows"
             type="checkbox"
-            className="text-primary-600 focus:ring-primary-500 inline-flex h-4 w-4 place-self-center justify-self-end rounded border-gray-300 "
+            className="text-emphasis focus:ring-emphasis dark:text-muted border-default inline-flex h-4 w-4 place-self-center justify-self-end rounded "
             checked={!!checked.userId}
             onChange={(e) => {
               if (e.target.checked) {
@@ -217,19 +168,18 @@ const Filter = (props: {
         </div>
         {teams.map((profile) => (
           <div
-            className="item-center flex px-4 py-[6px] focus-within:bg-gray-100 hover:cursor-pointer hover:bg-gray-50"
+            className="item-center focus-within:bg-subtle hover:bg-muted flex px-4 py-[6px] hover:cursor-pointer"
             key={`${profile.teamId || 0}`}>
             <Avatar
-              imageSrc=""
+              imageSrc={profile.image || ""}
               size="sm"
               alt={`${profile.slug} Avatar`}
-              gravatarFallbackMd5="fallback"
               className="self-center"
               asChild
             />
             <label
               htmlFor={profile.slug || ""}
-              className="ml-2 mr-auto select-none self-center truncate text-sm font-medium text-gray-700 hover:cursor-pointer">
+              className="text-default ml-2 mr-auto select-none self-center truncate text-sm font-medium hover:cursor-pointer">
               {profile.slug}
             </label>
 
@@ -264,7 +214,7 @@ const Filter = (props: {
                   }
                 }
               }}
-              className="text-primary-600 focus:ring-primary-500 inline-flex h-4 w-4 place-self-center justify-self-end rounded border-gray-300 "
+              className="text-emphasis focus:ring-emphasis dark:text-muted border-default inline-flex h-4 w-4 place-self-center justify-self-end rounded "
             />
           </div>
         ))}

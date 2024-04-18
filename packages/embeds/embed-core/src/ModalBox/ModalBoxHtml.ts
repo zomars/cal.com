@@ -5,7 +5,7 @@ const html = `<style>
   height:100%;
   top:0;
   left:0;
-  z-index:99999999;
+  z-index:999999999999;
   display:block;
   background-color:rgb(5,5,5, 0.8)
 }
@@ -46,11 +46,11 @@ const html = `<style>
 <div class="modal-box">
   <div class="body">
     <div id="wrapper" class="z-[999999999999] absolute flex w-full items-center">
-      <div class="loader modal-loader border-brand dark:border-darkmodebrand">
+      <div class="loader modal-loader border-brand-default dark:border-darkmodebrand">
         <span class="loader-inner bg-brand dark:bg-darkmodebrand"></span>
       </div>
       </div>
-    <div id="error" class="hidden left-1/2 -translate-x-1/2 relative text-white"></div>
+    <div id="error" class="hidden left-1/2 -translate-x-1/2 relative text-inverted"></div>
     <slot></slot>
   </div>
 </div>

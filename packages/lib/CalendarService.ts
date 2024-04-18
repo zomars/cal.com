@@ -4,7 +4,7 @@ import type { Prisma } from "@prisma/client";
 import ICAL from "ical.js";
 import type { Attendee, DateArray, DurationObject, Person } from "ics";
 import { createEvent } from "ics";
-import type { DAVAccount, DAVCalendar } from "tsdav";
+import type { DAVAccount, DAVCalendar, DAVObject } from "tsdav";
 import {
   createAccount,
   createCalendarObject,
@@ -37,6 +37,13 @@ const DEFAULT_CALENDAR_TYPE = "caldav";
 
 const CALENDSO_ENCRYPTION_KEY = process.env.CALENDSO_ENCRYPTION_KEY || "";
 
+type FetchObjectsWithOptionalExpandOptionsType = {
+  selectedCalendars: IntegrationCalendar[];
+  startISOString: string;
+  dateTo: string;
+  headers?: Record<string, string>;
+};
+
 function hasFileExtension(url: string): boolean {
   // Get the last portion of the URL (after the last '/')
   const fileName = url.substring(url.lastIndexOf("/") + 1);
@@ -44,14 +51,38 @@ function hasFileExtension(url: string): boolean {
   return fileName.includes(".") && !fileName.substring(fileName.lastIndexOf(".")).includes("/");
 }
 
-function getFileExtension(url: string): string | null {
+function getFileExtension(url: string): string {
   // Return null if the URL does not have a file extension
-  if (!hasFileExtension(url)) return null;
+  if (!hasFileExtension(url)) return "ics";
   // Get the last portion of the URL (after the last '/')
   const fileName = url.substring(url.lastIndexOf("/") + 1);
   // Extract the file extension
   return fileName.substring(fileName.lastIndexOf(".") + 1);
 }
+
+// for Apple's Travel Time feature only (for now)
+const getTravelDurationInSeconds = (vevent: ICAL.Component, log: typeof logger) => {
+  const travelDuration: ICAL.Duration = vevent.getFirstPropertyValue("x-apple-travel-duration");
+  if (!travelDuration) return 0;
+
+  // we can't rely on this being a valid duration and it's painful to check, so just try and catch if anything throws
+  try {
+    const travelSeconds = travelDuration.toSeconds();
+    // integer validation as we can never be sure with ical.js
+    if (!Number.isInteger(travelSeconds)) return 0;
+    return travelSeconds;
+  } catch (e) {
+    log.error("invalid travelDuration?", e);
+    return 0;
+  }
+};
+
+const applyTravelDuration = (event: ICAL.Event, seconds: number) => {
+  if (seconds <= 0) return event;
+  // move event start date back by the specified travel time
+  event.startDate.second -= seconds;
+  return event;
+};
 
 const convertDate = (date: string): DateArray =>
   dayjs(date)
@@ -64,18 +95,7 @@ const getDuration = (start: string, end: string): DurationObject => ({
   minutes: dayjs(end).diff(dayjs(start), "minute"),
 });
 
-const buildUtcOffset = (minutes: number): string => {
-  const h =
-    minutes > 0
-      ? "+" + (Math.floor(minutes / 60) < 10 ? "0" + Math.floor(minutes / 60) : Math.floor(minutes / 60))
-      : "-" +
-        (Math.ceil(minutes / 60) > -10 ? "0" + Math.ceil(minutes / 60) * -1 : Math.ceil(minutes / 60) * -1);
-  const m = Math.abs(minutes % 60);
-  const offset = `${h}:${m}`;
-  return offset;
-};
-
-const getAttendees = (attendees: Person[]): Attendee[] =>
+const mapAttendees = (attendees: Person[]): Attendee[] =>
   attendees.map(({ email, name }) => ({ name, email, partstat: "NEEDS-ACTION" }));
 
 export default abstract class BaseCalendarService implements Calendar {
@@ -84,6 +104,7 @@ export default abstract class BaseCalendarService implements Calendar {
   private headers: Record<string, string> = {};
   protected integrationName = "";
   private log: typeof logger;
+  private credential: CredentialPayload;
 
   constructor(credential: CredentialPayload, integrationName: string, url?: string) {
     this.integrationName = integrationName;
@@ -98,11 +119,25 @@ export default abstract class BaseCalendarService implements Calendar {
 
     this.credentials = { username, password };
     this.headers = getBasicAuthHeaders({ username, password });
+    this.credential = credential;
 
-    this.log = logger.getChildLogger({ prefix: [`[[lib] ${this.integrationName}`] });
+    this.log = logger.getSubLogger({ prefix: [`[[lib] ${this.integrationName}`] });
   }
 
-  async createEvent(event: CalendarEvent): Promise<NewCalendarEventType> {
+  private getAttendees(event: CalendarEvent) {
+    const attendees = mapAttendees(event.attendees);
+
+    if (event.team?.members) {
+      const teamAttendeesWithoutCurrentUser = event.team.members.filter(
+        (member) => member.email !== this.credential.user?.email
+      );
+      attendees.push(...mapAttendees(teamAttendeesWithoutCurrentUser));
+    }
+
+    return attendees;
+  }
+
+  async createEvent(event: CalendarEvent, credentialId: number): Promise<NewCalendarEventType> {
     try {
       const calendars = await this.listCalendars(event);
 
@@ -118,7 +153,7 @@ export default abstract class BaseCalendarService implements Calendar {
         description: getRichDescription(event),
         location: getLocation(event),
         organizer: { email: event.organizer.email, name: event.organizer.name },
-        attendees: getAttendees(event.attendees),
+        attendees: this.getAttendees(event),
         /** according to https://datatracker.ietf.org/doc/html/rfc2446#section-3.2.1, in a published iCalendar component.
          * "Attendees" MUST NOT be present
          * `attendees: this.getAttendees(event.attendees),`
@@ -130,12 +165,17 @@ export default abstract class BaseCalendarService implements Calendar {
       if (error || !iCalString)
         throw new Error(`Error creating iCalString:=> ${error?.message} : ${error?.name} `);
 
+      const mainHostDestinationCalendar = event.destinationCalendar
+        ? event.destinationCalendar.find((cal) => cal.credentialId === credentialId) ??
+          event.destinationCalendar[0]
+        : undefined;
+
       // We create the event directly on iCal
       const responses = await Promise.all(
         calendars
           .filter((c) =>
-            event.destinationCalendar?.externalId
-              ? c.externalId === event.destinationCalendar.externalId
+            mainHostDestinationCalendar?.externalId
+              ? c.externalId === mainHostDestinationCalendar.externalId
               : true
           )
           .map((calendar) =>
@@ -189,7 +229,7 @@ export default abstract class BaseCalendarService implements Calendar {
         description: getRichDescription(event),
         location: getLocation(event),
         organizer: { email: event.organizer.email, name: event.organizer.name },
-        attendees: getAttendees(event.attendees),
+        attendees: this.getAttendees(event),
       });
 
       if (error) {
@@ -274,13 +314,41 @@ export default abstract class BaseCalendarService implements Calendar {
     }
   }
 
+  /**
+   * getUserTimezoneFromDB() retrieves the timezone of a user from the database.
+   *
+   * @param {number} id - The user's unique identifier.
+   * @returns {Promise<string | undefined>} - A Promise that resolves to the user's timezone or "Europe/London" as a default value if the timezone is not found.
+   */
+  getUserTimezoneFromDB = async (id: number): Promise<string | undefined> => {
+    const prisma = await import("@calcom/prisma").then((mod) => mod.default);
+    const user = await prisma.user.findUnique({
+      where: {
+        id,
+      },
+      select: {
+        timeZone: true,
+      },
+    });
+    return user?.timeZone;
+  };
+
+  /**
+   * getUserId() extracts the user ID from the first calendar in an array of IntegrationCalendars.
+   *
+   * @param {IntegrationCalendar[]} selectedCalendars - An array of IntegrationCalendars.
+   * @returns {number | null} - The user ID associated with the first calendar in the array, or null if the array is empty or the user ID is not found.
+   */
+  getUserId = (selectedCalendars: IntegrationCalendar[]): number | null => {
+    if (selectedCalendars.length === 0) {
+      return null;
+    }
+    return selectedCalendars[0].userId || null;
+  };
+
   isValidFormat = (url: string): boolean => {
     const allowedExtensions = ["eml", "ics"];
     const urlExtension = getFileExtension(url);
-    if (!urlExtension) {
-      console.error("Invalid request, calendar object extension missing");
-      return false;
-    }
     if (!allowedExtensions.includes(urlExtension)) {
       console.error(`Unsupported calendar object format: ${urlExtension}`);
       return false;
@@ -294,133 +362,143 @@ export default abstract class BaseCalendarService implements Calendar {
     selectedCalendars: IntegrationCalendar[]
   ): Promise<EventBusyDate[]> {
     const startISOString = new Date(dateFrom).toISOString();
-    const objects = (
-      await Promise.all(
-        selectedCalendars
-          .filter((sc) => ["caldav_calendar", "apple_calendar"].includes(sc.integration ?? ""))
-          .map((sc) =>
-            fetchCalendarObjects({
-              urlFilter: (url: string) => this.isValidFormat(url),
-              calendar: {
-                url: sc.externalId,
-              },
-              headers: this.headers,
-              expand: true,
-              timeRange: {
-                start: startISOString,
-                end: new Date(dateTo).toISOString(),
-              },
-            })
-          )
-      )
-    ).flat();
 
+    const objects = await this.fetchObjectsWithOptionalExpand({
+      selectedCalendars,
+      startISOString,
+      dateTo,
+      headers: this.headers,
+    });
+
+    const userId = this.getUserId(selectedCalendars);
+    // we use the userId from selectedCalendars to fetch the user's timeZone from the database primarily for all-day events without any timezone information
+    const userTimeZone = userId ? await this.getUserTimezoneFromDB(userId) : "Europe/London";
     const events: { start: string; end: string }[] = [];
-
     objects.forEach((object) => {
-      if (object.data == null || JSON.stringify(object.data) == "{}") return;
-
-      const jcalData = ICAL.parse(sanitizeCalendarObject(object));
-      const vcalendar = new ICAL.Component(jcalData);
-      const vevent = vcalendar.getFirstSubcomponent("vevent");
-
-      // if event status is free or transparent, return
-      if (vevent?.getFirstPropertyValue("transp") === "TRANSPARENT") return;
-
-      const event = new ICAL.Event(vevent);
-      const dtstart: { [key: string]: string } | undefined = vevent?.getFirstPropertyValue("dtstart");
-      const timezone = dtstart ? dtstart["timezone"] : undefined;
-      // We check if the dtstart timezone is in UTC which is actually represented by Z instead, but not recognized as that in ICAL.js as UTC
-      const isUTC = timezone === "Z";
-      const tzid: string | undefined = vevent?.getFirstPropertyValue("tzid") || isUTC ? "UTC" : timezone;
-      // In case of icalendar, when only tzid is available without vtimezone, we need to add vtimezone explicitly to take care of timezone diff
-      if (!vcalendar.getFirstSubcomponent("vtimezone") && tzid) {
-        const timezoneComp = new ICAL.Component("vtimezone");
-        timezoneComp.addPropertyWithValue("tzid", tzid);
-        const standard = new ICAL.Component("standard");
-        // get timezone offset
-        const tzoffsetfrom = buildUtcOffset(dayjs(event.startDate.toJSDate()).tz(tzid, true).utcOffset());
-        const tzoffsetto = buildUtcOffset(dayjs(event.endDate.toJSDate()).tz(tzid, true).utcOffset());
-        // set timezone offset
-        standard.addPropertyWithValue("tzoffsetfrom", tzoffsetfrom);
-        standard.addPropertyWithValue("tzoffsetto", tzoffsetto);
-        // provide a standard dtstart
-        standard.addPropertyWithValue("dtstart", "1601-01-01T00:00:00");
-        timezoneComp.addSubcomponent(standard);
-        vcalendar.addSubcomponent(timezoneComp);
+      if (!object || object.data == null || JSON.stringify(object.data) == "{}") return;
+      let vcalendar: ICAL.Component;
+      try {
+        const jcalData = ICAL.parse(sanitizeCalendarObject(object));
+        vcalendar = new ICAL.Component(jcalData);
+      } catch (e) {
+        console.error("Error parsing calendar object: ", e);
+        return;
       }
-      const vtimezone = vcalendar.getFirstSubcomponent("vtimezone");
+      const vevents = vcalendar.getAllSubcomponents("vevent");
+      vevents.forEach((vevent) => {
+        // if event status is free or transparent, return
+        if (vevent?.getFirstPropertyValue("transp") === "TRANSPARENT") return;
 
-      if (event.isRecurring()) {
-        let maxIterations = 365;
-        if (["HOURLY", "SECONDLY", "MINUTELY"].includes(event.getRecurrenceTypes())) {
-          console.error(`Won't handle [${event.getRecurrenceTypes()}] recurrence`);
+        const event = new ICAL.Event(vevent);
+        const dtstart: { [key: string]: string } | undefined = vevent?.getFirstPropertyValue("dtstart");
+        const timezone = dtstart ? dtstart["timezone"] : undefined;
+        // We check if the dtstart timezone is in UTC which is actually represented by Z instead, but not recognized as that in ICAL.js as UTC
+        const isUTC = timezone === "Z";
+        const tzid: string | undefined = vevent?.getFirstPropertyValue("tzid") || isUTC ? "UTC" : timezone;
+        // In case of icalendar, when only tzid is available without vtimezone, we need to add vtimezone explicitly to take care of timezone diff
+        if (!vcalendar.getFirstSubcomponent("vtimezone")) {
+          const timezoneToUse = tzid || userTimeZone;
+          if (timezoneToUse) {
+            try {
+              const timezoneComp = new ICAL.Component("vtimezone");
+              timezoneComp.addPropertyWithValue("tzid", timezoneToUse);
+              const standard = new ICAL.Component("standard");
+
+              // get timezone offset
+              const tzoffsetfrom = dayjs(event.startDate.toJSDate()).tz(timezoneToUse).format("Z");
+              const tzoffsetto = dayjs(event.endDate.toJSDate()).tz(timezoneToUse).format("Z");
+
+              // set timezone offset
+              standard.addPropertyWithValue("tzoffsetfrom", tzoffsetfrom);
+              standard.addPropertyWithValue("tzoffsetto", tzoffsetto);
+              // provide a standard dtstart
+              standard.addPropertyWithValue("dtstart", "1601-01-01T00:00:00");
+              timezoneComp.addSubcomponent(standard);
+              vcalendar.addSubcomponent(timezoneComp);
+            } catch (e) {
+              // Adds try-catch to ensure the code proceeds when Apple Calendar provides non-standard TZIDs
+              console.log("error in adding vtimezone", e);
+            }
+          } else {
+            console.error("No timezone found");
+          }
+        }
+        const vtimezone = vcalendar.getFirstSubcomponent("vtimezone");
+
+        // mutate event to consider travel time
+        applyTravelDuration(event, getTravelDurationInSeconds(vevent, this.log));
+
+        if (event.isRecurring()) {
+          let maxIterations = 365;
+          if (["HOURLY", "SECONDLY", "MINUTELY"].includes(event.getRecurrenceTypes())) {
+            console.error(`Won't handle [${event.getRecurrenceTypes()}] recurrence`);
+            return;
+          }
+
+          const start = dayjs(dateFrom);
+          const end = dayjs(dateTo);
+          const startDate = ICAL.Time.fromDateTimeString(startISOString);
+          startDate.hour = event.startDate.hour;
+          startDate.minute = event.startDate.minute;
+          startDate.second = event.startDate.second;
+          const iterator = event.iterator(startDate);
+          let current: ICAL.Time;
+          let currentEvent;
+          let currentStart = null;
+          let currentError;
+
+          while (
+            maxIterations > 0 &&
+            (currentStart === null || currentStart.isAfter(end) === false) &&
+            // this iterator was poorly implemented, normally done is expected to be
+            // returned
+            (current = iterator.next())
+          ) {
+            maxIterations -= 1;
+
+            try {
+              // @see https://github.com/mozilla-comm/ical.js/issues/514
+              currentEvent = event.getOccurrenceDetails(current);
+            } catch (error) {
+              if (error instanceof Error && error.message !== currentError) {
+                currentError = error.message;
+                this.log.error("error", error);
+              }
+            }
+            if (!currentEvent) return;
+            // do not mix up caldav and icalendar! For the recurring events here, the timezone
+            // provided is relevant, not as pointed out in https://datatracker.ietf.org/doc/html/rfc4791#section-9.6.5
+            // where recurring events are always in utc (in caldav!). Thus, apply the time zone here.
+            if (vtimezone) {
+              const zone = new ICAL.Timezone(vtimezone);
+              currentEvent.startDate = currentEvent.startDate.convertToZone(zone);
+              currentEvent.endDate = currentEvent.endDate.convertToZone(zone);
+            }
+            currentStart = dayjs(currentEvent.startDate.toJSDate());
+
+            if (currentStart.isBetween(start, end) === true) {
+              events.push({
+                start: currentStart.toISOString(),
+                end: dayjs(currentEvent.endDate.toJSDate()).toISOString(),
+              });
+            }
+          }
+          if (maxIterations <= 0) {
+            console.warn("could not find any occurrence for recurring event in 365 iterations");
+          }
           return;
         }
 
-        const start = dayjs(dateFrom);
-        const end = dayjs(dateTo);
-        const startDate = ICAL.Time.fromDateTimeString(startISOString);
-        startDate.hour = event.startDate.hour;
-        startDate.minute = event.startDate.minute;
-        startDate.second = event.startDate.second;
-        const iterator = event.iterator(startDate);
-        let current: ICAL.Time;
-        let currentEvent;
-        let currentStart = null;
-        let currentError;
-
-        while (
-          maxIterations > 0 &&
-          (currentStart === null || currentStart.isAfter(end) === false) &&
-          // this iterator was poorly implemented, normally done is expected to be
-          // returned
-          (current = iterator.next())
-        ) {
-          maxIterations -= 1;
-
-          try {
-            // @see https://github.com/mozilla-comm/ical.js/issues/514
-            currentEvent = event.getOccurrenceDetails(current);
-          } catch (error) {
-            if (error instanceof Error && error.message !== currentError) {
-              currentError = error.message;
-              this.log.error("error", error);
-            }
-          }
-          if (!currentEvent) return;
-          // do not mix up caldav and icalendar! For the recurring events here, the timezone
-          // provided is relevant, not as pointed out in https://datatracker.ietf.org/doc/html/rfc4791#section-9.6.5
-          // where recurring events are always in utc (in caldav!). Thus, apply the time zone here.
-          if (vtimezone) {
-            const zone = new ICAL.Timezone(vtimezone);
-            currentEvent.startDate = currentEvent.startDate.convertToZone(zone);
-            currentEvent.endDate = currentEvent.endDate.convertToZone(zone);
-          }
-          currentStart = dayjs(currentEvent.startDate.toJSDate());
-
-          if (currentStart.isBetween(start, end) === true) {
-            events.push({
-              start: currentStart.toISOString(),
-              end: dayjs(currentEvent.endDate.toJSDate()).toISOString(),
-            });
-          }
+        if (vtimezone) {
+          const zone = new ICAL.Timezone(vtimezone);
+          event.startDate = event.startDate.convertToZone(zone);
+          event.endDate = event.endDate.convertToZone(zone);
         }
-        if (maxIterations <= 0) {
-          console.warn("could not find any occurrence for recurring event in 365 iterations");
-        }
-        return;
-      }
 
-      if (vtimezone) {
-        const zone = new ICAL.Timezone(vtimezone);
-        event.startDate = event.startDate.convertToZone(zone);
-        event.endDate = event.endDate.convertToZone(zone);
-      }
-
-      return events.push({
-        start: dayjs(event.startDate.toJSDate()).toISOString(),
-        end: dayjs(event.endDate.toJSDate()).toISOString(),
+        return events.push({
+          start: dayjs(event.startDate.toJSDate()).toISOString(),
+          end: dayjs(event.endDate.toJSDate()).toISOString(),
+        });
       });
     });
 
@@ -440,13 +518,13 @@ export default abstract class BaseCalendarService implements Calendar {
 
       return calendars.reduce<IntegrationCalendar[]>((newCalendars, calendar) => {
         if (!calendar.components?.includes("VEVENT")) return newCalendars;
-
+        const [mainHostDestinationCalendar] = event?.destinationCalendar ?? [];
         newCalendars.push({
           externalId: calendar.url,
           /** @url https://github.com/calcom/cal.com/issues/7186 */
           name: typeof calendar.displayName === "string" ? calendar.displayName : "",
-          primary: event?.destinationCalendar?.externalId
-            ? event.destinationCalendar.externalId === calendar.url
+          primary: mainHostDestinationCalendar?.externalId
+            ? mainHostDestinationCalendar.externalId === calendar.url
             : false,
           integration: this.integrationName,
           email: this.credentials.username ?? "",
@@ -458,6 +536,81 @@ export default abstract class BaseCalendarService implements Calendar {
 
       throw reason;
     }
+  }
+
+  /**
+   * The fetchObjectsWithOptionalExpand function is responsible for fetching calendar objects
+   * from an array of selectedCalendars. It attempts to fetch objects with the expand option
+   * alone such that it works if a calendar supports it. If any calendar object has an undefined 'data' property
+   * and etag isn't undefined, the function makes a new request without the expand option to retrieve the data.
+   * The result is a flattened array of calendar objects with the structure { url: ..., etag: ..., data: ...}.
+   *
+   * @param {Object} options - The options object containing the following properties:
+   *   @param {IntegrationCalendar[]} options.selectedCalendars - An array of IntegrationCalendar objects to fetch data from.
+   *   @param {string} options.startISOString - The start date of the date range to fetch events from, in ISO 8601 format.
+   *   @param {string} options.dateTo - The end date of the date range to fetch events from.
+   *   @param {Object} options.headers - Headers to be included in the API requests.
+   * @returns {Promise<Array>} - A promise that resolves to a flattened array of calendar objects with the structure { url: ..., etag: ..., data: ...}.
+   */
+
+  async fetchObjectsWithOptionalExpand({
+    selectedCalendars,
+    startISOString,
+    dateTo,
+    headers,
+  }: FetchObjectsWithOptionalExpandOptionsType): Promise<DAVObject[]> {
+    const filteredCalendars = selectedCalendars.filter((sc) => sc.externalId);
+    const fetchPromises = filteredCalendars.map(async (sc) => {
+      const response = await fetchCalendarObjects({
+        urlFilter: (url) => this.isValidFormat(url),
+        calendar: {
+          url: sc.externalId,
+        },
+        headers,
+        expand: true,
+        timeRange: {
+          start: startISOString,
+          end: new Date(dateTo).toISOString(),
+        },
+      });
+
+      const processedResponse = await Promise.all(
+        response.map(async (calendarObject) => {
+          const calendarObjectHasEtag = calendarObject.etag !== undefined;
+          const calendarObjectDataUndefined = calendarObject.data === undefined;
+          if (calendarObjectDataUndefined && calendarObjectHasEtag) {
+            const responseWithoutExpand = await fetchCalendarObjects({
+              urlFilter: (url) => this.isValidFormat(url),
+              calendar: {
+                url: sc.externalId,
+              },
+              headers,
+              expand: false,
+              timeRange: {
+                start: startISOString,
+                end: new Date(dateTo).toISOString(),
+              },
+            });
+
+            return responseWithoutExpand.find(
+              (obj) => obj.url === calendarObject.url && obj.etag === calendarObject.etag
+            );
+          }
+          return calendarObject;
+        })
+      );
+      return processedResponse;
+    });
+    const resolvedPromises = await Promise.allSettled(fetchPromises);
+    const fulfilledPromises = resolvedPromises.filter(
+      (promise): promise is PromiseFulfilledResult<(DAVObject | undefined)[]> =>
+        promise.status === "fulfilled"
+    );
+    const flatResult = fulfilledPromises
+      .map((promise) => promise.value)
+      .flat()
+      .filter((obj) => obj !== null);
+    return flatResult as DAVObject[];
   }
 
   private async getEvents(
@@ -527,7 +680,6 @@ export default abstract class BaseCalendarService implements Calendar {
             timezone: calendarTimezone,
           };
         });
-
       return events;
     } catch (reason) {
       console.error(reason);

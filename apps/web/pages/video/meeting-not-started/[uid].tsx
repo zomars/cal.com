@@ -1,67 +1,14 @@
-import type { NextPageContext } from "next";
+import PageWrapper, { type CalPageWrapper } from "@components/PageWrapper";
 
-import dayjs from "@calcom/dayjs";
-import { useLocale } from "@calcom/lib/hooks/useLocale";
-import { detectBrowserTimeFormat } from "@calcom/lib/timeFormat";
-import prisma, { bookingMinimalSelect } from "@calcom/prisma";
-import type { inferSSRProps } from "@calcom/types/inferSSRProps";
-import { Button, HeadSeo, EmptyScreen } from "@calcom/ui";
-import { FiArrowRight, FiCalendar, FiClock } from "@calcom/ui/components/icon";
+import MeetingNotStarted from "~/videos/views/videos-meeting-not-started-single-view";
 
-export default function MeetingNotStarted(props: inferSSRProps<typeof getServerSideProps>) {
-  const { t } = useLocale();
-  return (
-    <>
-      <HeadSeo title={t("this_meeting_has_not_started_yet")} description={props.booking.title} />
-      <main className="mx-auto my-24 max-w-3xl">
-        <EmptyScreen
-          Icon={FiClock}
-          headline={t("this_meeting_has_not_started_yet")}
-          description={
-            <>
-              <h2 className="mb-2 text-center font-medium">{props.booking.title}</h2>
-              <p className="text-center text-gray-500">
-                <FiCalendar className="mr-1 -mt-1 inline-block h-4 w-4" />
-                {dayjs(props.booking.startTime).format(detectBrowserTimeFormat + ", dddd DD MMMM YYYY")}
-              </p>
-            </>
-          }
-          buttonRaw={
-            <Button data-testid="return-home" href="/event-types" EndIcon={FiArrowRight}>
-              {t("go_back")}
-            </Button>
-          }
-        />
-      </main>
-    </>
-  );
-}
+export {
+  getServerSideProps,
+  type PageProps,
+} from "~/videos/views/videos-meeting-not-started-single-view.getServerSideProps";
 
-export async function getServerSideProps(context: NextPageContext) {
-  const booking = await prisma.booking.findUnique({
-    where: {
-      uid: context.query.uid as string,
-    },
-    select: bookingMinimalSelect,
-  });
+const MeetingNotStartedPage = MeetingNotStarted as unknown as CalPageWrapper;
 
-  if (!booking) {
-    return {
-      redirect: {
-        destination: "/video/no-meeting-found",
-        permanent: false,
-      },
-    };
-  }
+MeetingNotStartedPage.PageWrapper = PageWrapper;
 
-  const bookingObj = Object.assign({}, booking, {
-    startTime: booking.startTime.toString(),
-    endTime: booking.endTime.toString(),
-  });
-
-  return {
-    props: {
-      booking: bookingObj,
-    },
-  };
-}
+export default MeetingNotStartedPage;

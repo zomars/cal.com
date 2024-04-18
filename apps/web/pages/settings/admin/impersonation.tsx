@@ -1,9 +1,12 @@
+"use client";
+
 import { signIn } from "next-auth/react";
 import { useRef } from "react";
 
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { Button, Meta, TextField } from "@calcom/ui";
 
+import PageWrapper from "@components/PageWrapper";
 import { getLayout } from "@components/auth/layouts/AdminLayout";
 
 function AdminView() {
@@ -28,8 +31,11 @@ function AdminView() {
             ref={usernameRef}
             hint={t("impersonate_user_tip")}
             defaultValue={undefined}
+            data-testid="admin-impersonation-input"
           />
-          <Button type="submit">{t("impersonate")}</Button>
+          <Button type="submit" data-testid="impersonation-submit">
+            {t("impersonate")}
+          </Button>
         </div>
       </form>
     </>
@@ -37,5 +43,6 @@ function AdminView() {
 }
 
 AdminView.getLayout = getLayout;
+AdminView.PageWrapper = PageWrapper;
 
 export default AdminView;

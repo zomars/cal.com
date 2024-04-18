@@ -1,4 +1,6 @@
-import { useRouter } from "next/router";
+"use client";
+
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { HOSTED_CAL_FEATURES } from "@calcom/lib/constants";
@@ -19,8 +21,12 @@ const SAMLSSO = () => {
   }, []);
 
   return (
-    <div className="w-full bg-white sm:mx-0 xl:mt-0">
-      <Meta title={t("sso_configuration")} description={t("sso_configuration_description")} />
+    <div className="bg-default w-full sm:mx-0">
+      <Meta
+        title={t("sso_configuration")}
+        description={t("sso_configuration_description")}
+        borderInShellHeader={true}
+      />
       <SSOConfiguration teamId={null} />
     </div>
   );

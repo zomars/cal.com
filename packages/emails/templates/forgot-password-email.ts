@@ -1,4 +1,4 @@
-import { TFunction } from "next-i18next";
+import type { TFunction } from "next-i18next";
 
 import { APP_NAME } from "@calcom/lib/constants";
 
@@ -14,8 +14,6 @@ export type PasswordReset = {
   resetLink: string;
 };
 
-export const PASSWORD_RESET_EXPIRY_HOURS = 6;
-
 export default class ForgotPasswordEmail extends BaseEmail {
   passwordEvent: PasswordReset;
 
@@ -25,14 +23,14 @@ export default class ForgotPasswordEmail extends BaseEmail {
     this.passwordEvent = passwordEvent;
   }
 
-  protected getNodeMailerPayload(): Record<string, unknown> {
+  protected async getNodeMailerPayload(): Promise<Record<string, unknown>> {
     return {
       to: `${this.passwordEvent.user.name} <${this.passwordEvent.user.email}>`,
       from: `${APP_NAME} <${this.getMailerOptions().from}>`,
       subject: this.passwordEvent.language("reset_password_subject", {
         appName: APP_NAME,
       }),
-      html: renderEmail("ForgotPasswordEmail", this.passwordEvent),
+      html: await renderEmail("ForgotPasswordEmail", this.passwordEvent),
       text: this.getTextBody(),
     };
   }

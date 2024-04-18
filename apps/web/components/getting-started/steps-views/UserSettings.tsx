@@ -1,45 +1,54 @@
-import { ArrowRightIcon } from "@heroicons/react/outline";
-import { useEffect, useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 import dayjs from "@calcom/dayjs";
+import { useTimePreferences } from "@calcom/features/bookings/lib";
+import { FULL_NAME_LENGTH_MAX_LIMIT } from "@calcom/lib/constants";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { telemetryEventTypes, useTelemetry } from "@calcom/lib/telemetry";
 import { trpc } from "@calcom/trpc/react";
-import { Button, TimezoneSelect } from "@calcom/ui";
+import { Button, TimezoneSelect, Icon, Input } from "@calcom/ui";
 
 import { UsernameAvailabilityField } from "@components/ui/UsernameAvailability";
 
-import type { IOnboardingPageProps } from "../../../pages/getting-started/[[...step]]";
-
 interface IUserSettingsProps {
-  user: IOnboardingPageProps["user"];
   nextStep: () => void;
+  hideUsername?: boolean;
 }
 
 const UserSettings = (props: IUserSettingsProps) => {
-  const { user, nextStep } = props;
+  const { nextStep } = props;
+  const [user] = trpc.viewer.me.useSuspenseQuery();
   const { t } = useLocale();
-  const [selectedTimeZone, setSelectedTimeZone] = useState(dayjs.tz.guess());
+  const { setTimezone: setSelectedTimeZone, timezone: selectedTimeZone } = useTimePreferences();
   const telemetry = useTelemetry();
+  const userSettingsSchema = z.object({
+    name: z
+      .string()
+      .min(1)
+      .max(FULL_NAME_LENGTH_MAX_LIMIT, {
+        message: t("max_limit_allowed_hint", { limit: FULL_NAME_LENGTH_MAX_LIMIT }),
+      }),
+  });
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm({
+  } = useForm<z.infer<typeof userSettingsSchema>>({
     defaultValues: {
       name: user?.name || "",
     },
     reValidateMode: "onChange",
+    resolver: zodResolver(userSettingsSchema),
   });
 
   useEffect(() => {
     telemetry.event(telemetryEventTypes.onboardingStarted);
   }, [telemetry]);
 
-  const defaultOptions = { required: true, maxLength: 255 };
-
-  const utils = trpc.useContext();
+  const utils = trpc.useUtils();
   const onSuccess = async () => {
     await utils.viewer.me.invalidate();
     nextStep();
@@ -58,32 +67,33 @@ const UserSettings = (props: IUserSettingsProps) => {
   return (
     <form onSubmit={onSubmit}>
       <div className="space-y-6">
-        {/* Username textfield */}
-        <UsernameAvailabilityField user={user} />
+        {/* Username textfield: when not coming from signup */}
+        {!props.hideUsername && <UsernameAvailabilityField />}
 
         {/* Full name textfield */}
         <div className="w-full">
-          <label htmlFor="name" className="mb-2 block text-sm font-medium text-gray-700">
+          <label htmlFor="name" className="text-default mb-2 block text-sm font-medium">
             {t("full_name")}
           </label>
-          <input
-            {...register("name", defaultOptions)}
+          <Input
+            {...register("name", {
+              required: true,
+            })}
             id="name"
             name="name"
             type="text"
             autoComplete="off"
             autoCorrect="off"
-            className="w-full rounded-md border border-gray-300 text-sm"
           />
           {errors.name && (
             <p data-testid="required" className="py-2 text-xs text-red-500">
-              {t("required")}
+              {errors.name.message}
             </p>
           )}
         </div>
         {/* Timezone select field */}
         <div className="w-full">
-          <label htmlFor="timeZone" className="block text-sm font-medium text-gray-700">
+          <label htmlFor="timeZone" className="text-default block text-sm font-medium">
             {t("timezone")}
           </label>
 
@@ -94,7 +104,7 @@ const UserSettings = (props: IUserSettingsProps) => {
             className="mt-2 w-full rounded-md text-sm"
           />
 
-          <p className="mt-3 flex flex-row font-sans text-xs leading-tight text-gray-500 dark:text-white">
+          <p className="text-subtle mt-3 flex flex-row font-sans text-xs leading-tight">
             {t("current_time")} {dayjs().tz(selectedTimeZone).format("LT").toString().toLowerCase()}
           </p>
         </div>
@@ -102,9 +112,10 @@ const UserSettings = (props: IUserSettingsProps) => {
       <Button
         type="submit"
         className="mt-8 flex w-full flex-row justify-center"
-        disabled={mutation.isLoading}>
+        loading={mutation.isPending}
+        disabled={mutation.isPending}>
         {t("next_step_text")}
-        <ArrowRightIcon className="ml-2 h-4 w-4 self-center" aria-hidden="true" />
+        <Icon name="arrow-right" className="ml-2 h-4 w-4 self-center" aria-hidden="true" />
       </Button>
     </form>
   );

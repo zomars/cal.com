@@ -8,10 +8,9 @@ export type AvatarGroupProps = {
     image: string;
     title?: string;
     alt?: string;
-    href?: string;
+    href?: string | null;
   }[];
   className?: string;
-  accepted?: boolean;
   truncateAfter?: number;
 };
 
@@ -25,16 +24,18 @@ export const AvatarGroup = function AvatarGroup(props: AvatarGroupProps) {
   const displayedAvatars = props.items.filter((avatar) => avatar.image).slice(0, truncateAfter);
   const numTruncatedAvatars = LENGTH - displayedAvatars.length;
 
+  if (!displayedAvatars.length) return <></>;
+
   return (
     <ul className={classNames("flex items-center", props.className)}>
       {displayedAvatars.map((item, idx) => (
-        <li key={idx} className="-mr-[4px] inline-block">
+        <li key={idx} className="-mr-1 inline-block">
           <Avatar
-            className="border-gray-200"
+            data-testid="avatar"
+            className="border-subtle"
             imageSrc={item.image}
             title={item.title}
             alt={item.alt || ""}
-            accepted={props.accepted}
             size={props.size}
             href={item.href}
           />
@@ -43,12 +44,12 @@ export const AvatarGroup = function AvatarGroup(props: AvatarGroupProps) {
       {numTruncatedAvatars > 0 && (
         <li
           className={classNames(
-            "bg-darkgray-300 relative -mr-[4px] mb-1 inline-flex justify-center overflow-hidden rounded-full",
+            "bg-inverted relative -mr-1 inline-flex justify-center  overflow-hidden rounded-full",
             props.size === "sm" ? "min-w-6 h-6" : "min-w-16 h-16"
           )}>
           <span
             className={classNames(
-              "m-auto px-1 text-center text-white",
+              " text-inverted m-auto flex h-full w-full items-center justify-center text-center",
               props.size === "sm" ? "text-[12px]" : "text-2xl"
             )}>
             +{numTruncatedAvatars}

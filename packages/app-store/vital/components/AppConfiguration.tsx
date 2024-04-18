@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useEffect, useState, useMemo } from "react";
 
 import { Button, Select, showToast } from "@calcom/ui";
 
@@ -34,19 +33,16 @@ const saveSettings = async ({
 };
 
 const AppConfiguration = (props: IAppConfigurationProps) => {
-  const { t } = useTranslation();
   const [credentialId] = props.credentialIds;
 
-  const options = [
-    {
-      label: t("vital_app_total_label", { ns: "vital" }),
-      value: "total",
-    },
-    {
-      label: t("vital_app_duration_label", { ns: "vital" }),
-      value: "duration",
-    },
-  ];
+  const options = useMemo(
+    () => [
+      { label: "Total (total = rem + light sleep + deep sleep)", value: "total" },
+      { label: "Duration (duration = bedtime end - bedtime start)", value: "duration" },
+    ],
+    []
+  );
+
   const [selectedParam, setSelectedParam] = useState<{ label: string; value: string }>(options[0]);
   const [touchedForm, setTouchedForm] = useState(false);
   const defaultSleepValue = 0;
@@ -72,7 +68,9 @@ const AppConfiguration = (props: IAppConfigurationProps) => {
           setConnected(vitalSettings.connected);
         }
         if (vitalSettings.sleepValue && vitalSettings.parameter) {
-          const selectedParam = options.find((item) => item.value === vitalSettings.parameter);
+          const selectedParam = options.find(
+            (item: { value: string }) => item.value === vitalSettings.parameter
+          );
           if (selectedParam) {
             setSelectedParam(selectedParam);
           }
@@ -81,6 +79,7 @@ const AppConfiguration = (props: IAppConfigurationProps) => {
       }
     }
     getVitalsConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!credentialId) {
@@ -91,21 +90,21 @@ const AppConfiguration = (props: IAppConfigurationProps) => {
   return (
     <div className="flex-col items-start p-3 text-sm">
       <p>
-        <strong>
-          {t("connected_vital_app", { ns: "vital" })} Vital App: {connected ? "Yes" : "No"}
-        </strong>
+        <strong>Connected with Vital App: {connected ? "Yes" : "No"}</strong>
       </p>
       <br />
       <p>
-        <strong>{t("vital_app_sleep_automation", { ns: "vital" })}</strong>
+        <strong>Sleeping reschedule automation</strong>
       </p>
-      <p className="mt-1">{t("vital_app_automation_description", { ns: "vital" })}</p>
+      <p className="mt-1">
+        You can select different parameters to trigger the reschedule based on your sleeping metrics.
+      </p>
 
       <div className="w-100 mt-2">
         <div className="block sm:flex">
           <div className="min-w-24 mb-4 mt-5 sm:mb-0">
             <label htmlFor="description" className="text-sm font-bold">
-              {t("vital_app_parameter", { ns: "vital" })}
+              Parameter
             </label>
           </div>
           <div className="w-120 mt-2.5">
@@ -124,7 +123,7 @@ const AppConfiguration = (props: IAppConfigurationProps) => {
       <div className="w-full">
         <div className="min-w-24 mb-4 mt-3">
           <label htmlFor="value" className="text-sm font-bold">
-            {t("vital_app_trigger", { ns: "vital" })}
+            Trigger at below or equal than
           </label>
         </div>
         <div className="mx-2 mt-0 inline-flex w-24 items-baseline">
@@ -138,10 +137,10 @@ const AppConfiguration = (props: IAppConfigurationProps) => {
               setSleepValue(Number(e.currentTarget.value));
               setTouchedForm(true);
             }}
-            className="pr-12shadow-sm mt-1 block w-full rounded-sm border border-gray-300 py-2 pl-6 focus:border-neutral-500 focus:outline-none focus:ring-neutral-500 sm:text-sm"
+            className="pr-12shadow-sm border-default mt-1 block w-full rounded-sm border py-2 pl-6 focus:border-neutral-500 focus:outline-none focus:ring-neutral-500 sm:text-sm"
           />
           <p className="ml-2">
-            <strong>{t("vital_app_hours", { ns: "vital" })}</strong>
+            <strong>hours</strong>
           </p>
         </div>
       </div>
@@ -153,9 +152,9 @@ const AppConfiguration = (props: IAppConfigurationProps) => {
             try {
               setSaveLoading(true);
               await saveSettings({ parameter: selectedParam, sleepValue: sleepValue });
-              showToast(t("vital_app_save_success"), "success");
+              showToast("Success saving your Vital Configurations", "success");
             } catch (error) {
-              showToast(t("vital_app_save_error"), "error");
+              showToast("An error ocurred saving your Vital Configurations", "error");
               setSaveLoading(false);
             }
             setTouchedForm(false);
@@ -163,7 +162,7 @@ const AppConfiguration = (props: IAppConfigurationProps) => {
           }}
           loading={saveLoading}
           disabled={disabledSaveButton}>
-          {t("vital_app_save_button", { ns: "vital" })}
+          Save configuration
         </Button>
       </div>
     </div>

@@ -48,7 +48,7 @@ export default class ExchangeCalendarService implements Calendar {
 
   constructor(credential: CredentialPayload) {
     this.integrationName = "exchange_calendar";
-    this.log = logger.getChildLogger({ prefix: [`[[lib] ${this.integrationName}`] });
+    this.log = logger.getSubLogger({ prefix: [`[[lib] ${this.integrationName}`] });
     this.payload = JSON.parse(
       symmetricDecrypt(credential.key?.toString() || "", process.env.CALENDSO_ENCRYPTION_KEY || "")
     );
@@ -64,6 +64,11 @@ export default class ExchangeCalendarService implements Calendar {
     event.attendees.forEach((attendee: Person) => {
       appointment.RequiredAttendees.Add(new Attendee(attendee.email));
     });
+    if (event.team?.members) {
+      event.team.members.forEach((member: Person) => {
+        appointment.RequiredAttendees.Add(new Attendee(member.email));
+      });
+    }
     return appointment
       .Save(SendInvitationsMode.SendToAllAndSaveCopy)
       .then(() => {
@@ -95,6 +100,11 @@ export default class ExchangeCalendarService implements Calendar {
     event.attendees.forEach((attendee: Person) => {
       appointment.RequiredAttendees.Add(new Attendee(attendee.email));
     });
+    if (event.team?.members) {
+      event.team.members.forEach((member) => {
+        appointment.RequiredAttendees.Add(new Attendee(member.email));
+      });
+    }
     return appointment
       .Update(
         ConflictResolutionMode.AlwaysOverwrite,
@@ -188,7 +198,7 @@ export default class ExchangeCalendarService implements Calendar {
   }
 
   private getExchangeService(): ExchangeService {
-    const service: ExchangeService = new ExchangeService();
+    const service: ExchangeService = new ExchangeService(this.payload.exchangeVersion);
     service.Credentials = new WebCredentials(this.payload.username, this.payload.password);
     service.Url = new Uri(this.payload.url);
     if (this.payload.authenticationMethod === ExchangeAuthentication.NTLM) {

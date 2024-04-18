@@ -1,24 +1,13 @@
-import type { GetStaticPaths, GetStaticProps } from "next";
-import { z } from "zod";
+"use client";
 
-export { default } from "@calcom/features/ee/workflows/pages/workflow";
+import type { GetStaticPaths } from "next";
 
-const querySchema = z.object({
-  workflow: z.string(),
-});
+import Workflow from "@calcom/features/ee/workflows/pages/workflow";
 
-export const getStaticProps: GetStaticProps = (ctx) => {
-  const params = querySchema.safeParse(ctx.params);
-  console.log("Built workflow page:", params);
-  if (!params.success) return { notFound: true };
+import { getStaticProps } from "@lib/workflows/[workflow]/getStaticProps";
 
-  return {
-    props: {
-      workflow: params.data.workflow,
-    },
-    revalidate: 10, // seconds
-  };
-};
+import PageWrapper from "@components/PageWrapper";
+import type { CalPageWrapper } from "@components/PageWrapper";
 
 export const getStaticPaths: GetStaticPaths = () => {
   return {
@@ -26,3 +15,9 @@ export const getStaticPaths: GetStaticPaths = () => {
     fallback: "blocking",
   };
 };
+
+const WorkflowsPage = Workflow as CalPageWrapper;
+WorkflowsPage.PageWrapper = PageWrapper;
+
+export default WorkflowsPage;
+export { getStaticProps };

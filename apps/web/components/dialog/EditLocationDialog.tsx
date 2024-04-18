@@ -13,12 +13,12 @@ import {
   getHumanReadableLocationValue,
   getMessageForOrganizer,
   LocationType,
+  OrganizerDefaultConferencingAppType,
 } from "@calcom/app-store/locations";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import type { RouterOutputs } from "@calcom/trpc/react";
 import { trpc } from "@calcom/trpc/react";
-import { Button, Dialog, DialogContent, DialogFooter, Form, PhoneInput } from "@calcom/ui";
-import { FiMapPin } from "@calcom/ui/components/icon";
+import { Button, Icon, Input, Dialog, DialogContent, DialogFooter, Form, PhoneInput } from "@calcom/ui";
 
 import { QueryCell } from "@lib/QueryCell";
 
@@ -37,6 +37,7 @@ interface ISetLocationDialog {
   isOpenDialog: boolean;
   setSelectedLocation?: (param: LocationOption | undefined) => void;
   setEditingLocationType?: (param: string) => void;
+  teamId?: number;
 }
 
 const LocationInput = (props: {
@@ -52,15 +53,18 @@ const LocationInput = (props: {
   const { control } = useFormContext() as typeof locationFormMethods;
   if (eventLocationType?.organizerInputType === "text") {
     return (
-      <input {...locationFormMethods.register(eventLocationType.variable)} type="text" {...remainingProps} />
+      <Input {...locationFormMethods.register(eventLocationType.variable)} type="text" {...remainingProps} />
     );
   } else if (eventLocationType?.organizerInputType === "phone") {
+    const { defaultValue, ...rest } = remainingProps;
+
     return (
       <Controller
         name={eventLocationType.variable}
         control={control}
+        defaultValue={defaultValue}
         render={({ field: { onChange, value } }) => {
-          return <PhoneInput onChange={onChange} value={value} {...remainingProps} />;
+          return <PhoneInput onChange={onChange} value={value} {...rest} />;
         }}
       />
     );
@@ -78,13 +82,17 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
     defaultValues,
     setSelectedLocation,
     setEditingLocationType,
+    teamId,
   } = props;
   const { t } = useLocale();
-  const locationsQuery = trpc.viewer.locationOptions.useQuery();
+  const locationsQuery = trpc.viewer.locationOptions.useQuery({ teamId });
 
   useEffect(() => {
     if (selection) {
       locationFormMethods.setValue("locationType", selection?.value);
+      if (selection?.address) {
+        locationFormMethods.setValue("locationAddress", selection?.address);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
@@ -93,6 +101,8 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
     locationType: z.string(),
     phone: z.string().optional().nullable(),
     locationAddress: z.string().optional(),
+    credentialId: z.number().optional(),
+    teamName: z.string().optional(),
     locationLink: z
       .string()
       .optional()
@@ -109,7 +119,7 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
               message: `Invalid URL for ${eventLocationType.label}. ${
-                sampleUrl ? "Sample URL: " + sampleUrl : ""
+                sampleUrl ? `Sample URL: ${sampleUrl}` : ""
               }`,
             });
           }
@@ -146,10 +156,21 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
     name: "locationType",
   });
 
+  const selectedAddrValue = useWatch({
+    control: locationFormMethods.control,
+    name: "locationAddress",
+  });
+
   const eventLocationType = getEventLocationType(selectedLocation);
 
   const defaultLocation = defaultValues?.find(
-    (location: { type: EventLocationType["type"] }) => location.type === eventLocationType?.type
+    (location: { type: EventLocationType["type"]; address?: string }) => {
+      if (location.type === LocationType.InPerson) {
+        return location.type === eventLocationType?.type && location.address === selectedAddrValue;
+      } else {
+        return location.type === eventLocationType?.type;
+      }
+    }
   );
 
   const LocationOptions = (() => {
@@ -161,7 +182,7 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
 
       return (
         <div>
-          <label htmlFor="locationInput" className="block text-sm font-medium text-gray-700">
+          <label htmlFor="locationInput" className="text-default block text-sm font-medium">
             {t(eventLocationType.messageForOrganizer || "")}
           </label>
           <div className="mt-1">
@@ -171,7 +192,6 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
               id="locationInput"
               placeholder={t(eventLocationType.organizerInputPlaceholder || "")}
               required
-              className="block w-full rounded-sm border-gray-300 text-sm"
               // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
               defaultValue={
                 defaultLocation ? defaultLocation[eventLocationType.defaultValueVariable] : undefined
@@ -180,7 +200,7 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
             <ErrorMessage
               errors={locationFormMethods.formState.errors}
               name={eventLocationType.variable}
-              className="mt-1 text-sm text-red-500"
+              className="text-error mt-1 text-sm"
               as="p"
             />
           </div>
@@ -206,7 +226,7 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
         </div>
       );
     } else {
-      return <p className="text-sm">{getMessageForOrganizer(selectedLocation, t)}</p>;
+      return <p className="text-default text-sm">{getMessageForOrganizer(selectedLocation, t)}</p>;
     }
   })();
 
@@ -214,16 +234,16 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
     <Dialog open={isOpenDialog} onOpenChange={(open) => setShowLocationModal(open)}>
       <DialogContent>
         <div className="flex flex-row space-x-3">
-          <div className="bg-secondary-100 mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full sm:mx-0 sm:h-10 sm:w-10">
-            <FiMapPin className="text-primary-600 h-6 w-6" />
+          <div className="bg-subtle mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full sm:mx-0 sm:h-10 sm:w-10">
+            <Icon name="map-pin" className="text-emphasis h-6 w-6" />
           </div>
           <div className="w-full">
             <div className="mt-3 text-center sm:mt-0 sm:text-left">
-              <h3 className="text-lg font-medium leading-6 text-gray-900" id="modal-title">
+              <h3 className="text-emphasis text-lg font-medium leading-6" id="modal-title">
                 {t("edit_location")}
               </h3>
               {!booking && (
-                <p className="text-sm text-gray-400">
+                <p className="text-default text-sm">
                   <Trans i18nKey="cant_find_the_right_video_app_visit_our_app_store">
                     Can&apos;t find the right video app? Visit our
                     <Link className="cursor-pointer text-blue-500 underline" href="/apps/categories/video">
@@ -238,8 +258,8 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
 
             {booking && (
               <>
-                <p className="mt-6 mb-2 ml-1 text-sm font-bold text-black">{t("current_location")}:</p>
-                <p className="mb-2 ml-1 text-sm text-black">
+                <p className="text-emphasis mb-2 ml-1 mt-6 text-sm font-bold">{t("current_location")}:</p>
+                <p className="text-emphasis mb-2 ml-1 text-sm">
                   {getHumanReadableLocationValue(booking.location, t)}
                 </p>
               </>
@@ -276,6 +296,20 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
                   };
                 }
 
+                if (values.credentialId) {
+                  details = {
+                    ...details,
+                    credentialId: values.credentialId,
+                  };
+                }
+
+                if (values.teamName) {
+                  details = {
+                    ...details,
+                    teamName: values.teamName,
+                  };
+                }
+
                 saveLocation(newLocation, details);
                 setShowLocationModal(false);
                 setSelectedLocation?.(undefined);
@@ -290,7 +324,16 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
                 query={locationsQuery}
                 success={({ data }) => {
                   if (!data.length) return null;
-                  const locationOptions = [...data];
+                  const locationOptions = [...data].map((option) => {
+                    if (teamId) {
+                      // Let host's Default conferencing App option show for Team Event
+                      return option;
+                    }
+                    return {
+                      ...option,
+                      options: option.options.filter((o) => o.value !== OrganizerDefaultConferencingAppType),
+                    };
+                  });
                   if (booking) {
                     locationOptions.map((location) =>
                       location.options.filter((l) => !["phone", "attendeeInPerson"].includes(l.value))
@@ -311,6 +354,11 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
                             onChange={(val) => {
                               if (val) {
                                 locationFormMethods.setValue("locationType", val.value);
+                                if (!!val.credentialId) {
+                                  locationFormMethods.setValue("credentialId", val.credentialId);
+                                  locationFormMethods.setValue("teamName", val.teamName);
+                                }
+
                                 locationFormMethods.unregister([
                                   "locationLink",
                                   "locationAddress",
@@ -332,24 +380,22 @@ export const EditLocationDialog = (props: ISetLocationDialog) => {
                 }}
               />
               {selectedLocation && LocationOptions}
-              <DialogFooter>
-                <div className="mt-4 flex justify-end space-x-2 rtl:space-x-reverse">
-                  <Button
-                    onClick={() => {
-                      setShowLocationModal(false);
-                      setSelectedLocation?.(undefined);
-                      setEditingLocationType?.("");
-                      locationFormMethods.unregister(["locationType", "locationLink"]);
-                    }}
-                    type="button"
-                    color="secondary">
-                    {t("cancel")}
-                  </Button>
+              <DialogFooter className="relative">
+                <Button
+                  onClick={() => {
+                    setShowLocationModal(false);
+                    setSelectedLocation?.(undefined);
+                    setEditingLocationType?.("");
+                    locationFormMethods.unregister(["locationType", "locationLink"]);
+                  }}
+                  type="button"
+                  color="secondary">
+                  {t("cancel")}
+                </Button>
 
-                  <Button data-testid="update-location" type="submit">
-                    {t("update")}
-                  </Button>
-                </div>
+                <Button data-testid="update-location" type="submit">
+                  {t("update")}
+                </Button>
               </DialogFooter>
             </Form>
           </div>

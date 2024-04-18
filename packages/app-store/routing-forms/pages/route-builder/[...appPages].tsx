@@ -1,11 +1,15 @@
+"use client";
+
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import Link from "next/link";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import { Query, Builder, Utils as QbUtils } from "react-awesome-query-builder";
 // types
 import type { JsonTree, ImmutableTree, BuilderProps } from "react-awesome-query-builder";
+import type { UseFormReturn } from "react-hook-form";
 
 import Shell from "@calcom/features/shell/Shell";
+import { areTheySiblingEntitites } from "@calcom/lib/entityPermissionUtils";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { trpc } from "@calcom/trpc/react";
 import type { inferSSRProps } from "@calcom/types/inferSSRProps";
@@ -16,8 +20,10 @@ import {
   TextArea,
   TextField,
   Badge,
+  Divider,
 } from "@calcom/ui";
 
+import type { RoutingFormWithResponseCount } from "../../components/SingleForm";
 import SingleForm, {
   getServerSidePropsForSingleFormView as getServerSideProps,
 } from "../../components/SingleForm";
@@ -64,6 +70,7 @@ type Route =
   | GlobalRoute;
 
 const Route = ({
+  form,
   route,
   routes,
   setRoute,
@@ -73,31 +80,73 @@ const Route = ({
   moveDown,
   appUrl,
   disabled = false,
+  fieldIdentifiers,
 }: {
+  form: inferSSRProps<typeof getServerSideProps>["form"];
   route: Route;
   routes: Route[];
   setRoute: (id: string, route: Partial<Route>) => void;
   config: QueryBuilderUpdatedConfig;
   setRoutes: React.Dispatch<React.SetStateAction<Route[]>>;
+  fieldIdentifiers: string[];
   moveUp?: { fn: () => void; check: () => boolean } | null;
   moveDown?: { fn: () => void; check: () => boolean } | null;
   appUrl: string;
   disabled?: boolean;
 }) => {
+  const { t } = useLocale();
+
   const index = routes.indexOf(route);
 
-  const { data: eventTypesByGroup } = trpc.viewer.eventTypes.getByViewer.useQuery();
+  const { data: eventTypesByGroup, isLoading } = trpc.viewer.eventTypes.getByViewer.useQuery({
+    forRoutingForms: true,
+  });
 
   const eventOptions: { label: string; value: string }[] = [];
   eventTypesByGroup?.eventTypeGroups.forEach((group) => {
+    const eventTypeValidInContext = areTheySiblingEntitites({
+      entity1: {
+        teamId: group.teamId ?? null,
+        // group doesn't have userId. The query ensures that it belongs to the user only, if teamId isn't set. So, I am manually setting it to the form userId
+        userId: form.userId,
+      },
+      entity2: {
+        teamId: form.teamId ?? null,
+        userId: form.userId,
+      },
+    });
+
     group.eventTypes.forEach((eventType) => {
       const uniqueSlug = `${group.profile.slug}/${eventType.slug}`;
+      const isRouteAlreadyInUse = isRouter(route) ? false : uniqueSlug === route.action.value;
+
+      // If Event is already in use, we let it be so as to not break the existing setup
+      if (!isRouteAlreadyInUse && !eventTypeValidInContext) {
+        return;
+      }
+
       eventOptions.push({
         label: uniqueSlug,
         value: uniqueSlug,
       });
     });
   });
+
+  // /team/{TEAM_SLUG}/{EVENT_SLUG} -> /team/{TEAM_SLUG}
+  const eventTypePrefix =
+    eventOptions.length !== 0
+      ? eventOptions[0].value.substring(0, eventOptions[0].value.lastIndexOf("/") + 1)
+      : "";
+
+  const [customEventTypeSlug, setCustomEventTypeSlug] = useState<string>("");
+
+  useEffect(() => {
+    if (!isLoading) {
+      const isCustom =
+        !isRouter(route) && !eventOptions.find((eventOption) => eventOption.value === route.action.value);
+      setCustomEventTypeSlug(isCustom && !isRouter(route) ? route.action.value.split("/").pop() ?? "" : "");
+    }
+  }, [isLoading]);
 
   const onChange = (route: Route, immutableTree: ImmutableTree, config: QueryBuilderUpdatedConfig) => {
     const jsonTree = QbUtils.getTree(immutableTree);
@@ -138,12 +187,12 @@ const Route = ({
           }
           className="mb-6">
           <div className="-mt-3">
-            <Link href={`/${appUrl}/route-builder/${route.id}`}>
+            <Link href={`${appUrl}/route-builder/${route.id}`}>
               <Badge variant="gray">
                 <span className="font-semibold">{route.name}</span>
               </Badge>
             </Link>
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="text-subtle mt-2 text-sm">
               Fields available in <span className="font-bold">{route.name}</span> will be added to this form.
             </p>
           </div>
@@ -168,13 +217,13 @@ const Route = ({
       <div className="-mx-4 mb-4 flex w-full items-center sm:mx-0">
         <div className="cal-query-builder w-full ">
           <div>
-            <div className="flex w-full items-center text-sm text-gray-900">
+            <div className="text-emphasis flex w-full items-center text-sm">
               <div className="flex flex-grow-0 whitespace-nowrap">
-                <span>Send Booker to</span>
+                <span>{t("send_booker_to")}</span>
               </div>
               <Select
                 isDisabled={disabled}
-                className="block w-full flex-grow px-2"
+                className="data-testid-select-routing-action block w-full flex-grow px-2"
                 required
                 value={RoutingPages.find((page) => page.value === route.action?.type)}
                 onChange={(item) => {
@@ -202,7 +251,7 @@ const Route = ({
                     required
                     disabled={disabled}
                     name="customPageMessage"
-                    className="flex w-full flex-grow border-gray-300"
+                    className="border-default flex w-full flex-grow"
                     value={route.action.value}
                     onChange={(e) => {
                       setRoute(route.id, { action: { ...route.action, value: e.target.value } });
@@ -212,31 +261,84 @@ const Route = ({
                   <TextField
                     disabled={disabled}
                     name="externalRedirectUrl"
-                    className="flex w-full flex-grow border-gray-300 text-sm"
+                    className="border-default flex w-full flex-grow text-sm"
                     containerClassName="w-full mt-2"
-                    type="text"
+                    type="url"
                     required
                     labelSrOnly
                     value={route.action.value}
                     onChange={(e) => {
                       setRoute(route.id, { action: { ...route.action, value: e.target.value } });
                     }}
-                    placeholder="Enter External Redirect URL"
+                    placeholder="https://example.com"
                   />
                 ) : (
                   <div className="block w-full">
                     <Select
                       required
                       isDisabled={disabled}
-                      options={eventOptions}
+                      options={
+                        eventOptions.length !== 0
+                          ? [{ label: t("custom"), value: "custom" }].concat(eventOptions)
+                          : []
+                      }
                       onChange={(option) => {
                         if (!option) {
                           return;
                         }
-                        setRoute(route.id, { action: { ...route.action, value: option.value } });
+                        if (option.value !== "custom") {
+                          setRoute(route.id, { action: { ...route.action, value: option.value } });
+                          setCustomEventTypeSlug("");
+                        } else {
+                          setRoute(route.id, { action: { ...route.action, value: "custom" } });
+                          setCustomEventTypeSlug("");
+                        }
                       }}
-                      value={eventOptions.find((eventOption) => eventOption.value === route.action.value)}
+                      value={
+                        eventOptions.length !== 0 && route.action.value !== ""
+                          ? eventOptions.find(
+                              (eventOption) =>
+                                eventOption.value === route.action.value && !customEventTypeSlug.length
+                            ) || {
+                              label: t("custom"),
+                              value: "custom",
+                            }
+                          : undefined
+                      }
                     />
+                    {eventOptions.length !== 0 &&
+                    route.action.value !== "" &&
+                    (!eventOptions.find((eventOption) => eventOption.value === route.action.value) ||
+                      customEventTypeSlug.length) ? (
+                      <>
+                        <TextField
+                          disabled={disabled}
+                          className="border-default flex w-full flex-grow text-sm"
+                          containerClassName="w-full mt-2"
+                          addOnLeading={eventTypePrefix}
+                          required
+                          value={customEventTypeSlug}
+                          onChange={(e) => {
+                            setCustomEventTypeSlug(e.target.value);
+                            setRoute(route.id, {
+                              action: { ...route.action, value: `${eventTypePrefix}${e.target.value}` },
+                            });
+                          }}
+                          placeholder="event-url"
+                        />
+                        <div className="mt-2 ">
+                          <p className="text-subtle text-xs">
+                            {fieldIdentifiers.length
+                              ? t("field_identifiers_as_variables_with_example", {
+                                  variable: `{${fieldIdentifiers[0]}}`,
+                                })
+                              : t("field_identifiers_as_variables")}
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <></>
+                    )}
                   </div>
                 )
               ) : null}
@@ -244,7 +346,7 @@ const Route = ({
 
             {((route.isFallback && hasRules(route)) || !route.isFallback) && (
               <>
-                <hr className="my-6 text-gray-200" />
+                <Divider className="mb-6 mt-3" />
                 <Query
                   {...config}
                   value={route.state.tree}
@@ -281,15 +383,13 @@ const Routes = ({
   appUrl,
 }: {
   form: inferSSRProps<typeof getServerSideProps>["form"];
-  // Figure out the type
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  hookForm: any;
+  hookForm: UseFormReturn<RoutingFormWithResponseCount>;
   appUrl: string;
 }) => {
-  const { routes: serializedRoutes } = form;
+  const { routes: serializedRoutes } = hookForm.getValues();
   const { t } = useLocale();
 
-  const config = getQueryBuilderConfig(form);
+  const config = getQueryBuilderConfig(hookForm.getValues());
   const [routes, setRoutes] = useState(() => {
     const transformRoutes = () => {
       const _routes = serializedRoutes || [getEmptyRoute()];
@@ -307,14 +407,26 @@ const Routes = ({
       return deserializeRoute(route, config);
     });
   });
+
   const { data: allForms } = trpc.viewer.appRoutingForms.forms.useQuery();
 
   const availableRouters =
-    allForms
-      ?.filter((router) => {
-        return router.id !== form.id;
+    allForms?.filtered
+      .filter(({ form: router }) => {
+        const routerValidInContext = areTheySiblingEntitites({
+          entity1: {
+            teamId: router.teamId ?? null,
+            // group doesn't have userId. The query ensures that it belongs to the user only, if teamId isn't set. So, I am manually setting it to the form userId
+            userId: router.userId,
+          },
+          entity2: {
+            teamId: hookForm.getValues().teamId ?? null,
+            userId: hookForm.getValues().userId,
+          },
+        });
+        return router.id !== hookForm.getValues().id && routerValidInContext;
       })
-      .map((router) => {
+      .map(({ form: router }) => {
         return {
           value: router.id,
           label: router.name,
@@ -418,16 +530,22 @@ const Routes = ({
 
   hookForm.setValue("routes", routesToSave);
 
+  const fields = hookForm.getValues("fields");
+
+  const fieldIdentifiers = fields ? fields.map((field) => field.identifier ?? field.label) : [];
+
   return (
-    <div className="flex flex-col-reverse md:flex-row">
+    <div className="bg-default border-subtle flex flex-col-reverse rounded-md border p-8 md:flex-row">
       <div ref={animationRef} className="w-full ltr:mr-2 rtl:ml-2">
         {mainRoutes.map((route, key) => {
           return (
             <Route
+              form={form}
               appUrl={appUrl}
               key={route.id}
               config={config}
               route={route}
+              fieldIdentifiers={fieldIdentifiers}
               moveUp={{
                 check: () => key !== 0,
                 fn: () => {
@@ -493,12 +611,14 @@ const Routes = ({
 
         <div>
           <Route
+            form={form}
             config={config}
             route={fallbackRoute}
             routes={routes}
             setRoute={setRoute}
             setRoutes={setRoutes}
             appUrl={appUrl}
+            fieldIdentifiers={fieldIdentifiers}
           />
         </div>
       </div>
@@ -509,16 +629,25 @@ const Routes = ({
 export default function RouteBuilder({
   form,
   appUrl,
+  enrichedWithUserProfileForm,
 }: inferSSRProps<typeof getServerSideProps> & { appUrl: string }) {
   return (
     <SingleForm
       form={form}
       appUrl={appUrl}
-      Page={({ hookForm, form }) => (
-        <div className="route-config">
-          <Routes hookForm={hookForm} appUrl={appUrl} form={form} />
-        </div>
-      )}
+      enrichedWithUserProfileForm={enrichedWithUserProfileForm}
+      Page={({ hookForm, form }) => {
+        // If hookForm hasn't been initialized, don't render anything
+        // This is important here because some states get initialized which aren't reset when the hookForm is reset with the form values and they don't get the updated values
+        if (!hookForm.getValues().id) {
+          return null;
+        }
+        return (
+          <div className="route-config">
+            <Routes hookForm={hookForm} appUrl={appUrl} form={form} />
+          </div>
+        );
+      }}
     />
   );
 }

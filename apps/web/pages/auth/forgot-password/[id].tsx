@@ -1,66 +1,49 @@
-import type { ResetPasswordRequest } from "@prisma/client";
-import debounce from "lodash/debounce";
-import type { GetServerSidePropsContext } from "next";
-import { getCsrfToken } from "next-auth/react";
-import { serverSideTranslations } from "next-i18next/serverSideTranslations";
+"use client";
+
 import Link from "next/link";
-import React, { useMemo } from "react";
+import type { CSSProperties } from "react";
+import { useForm } from "react-hook-form";
 
-import dayjs from "@calcom/dayjs";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import prisma from "@calcom/prisma";
-import { Button, TextField } from "@calcom/ui";
+import { Button, PasswordField, Form } from "@calcom/ui";
 
+import PageWrapper from "@components/PageWrapper";
 import AuthContainer from "@components/ui/AuthContainer";
 
+import { getServerSideProps } from "@server/lib/forgot-password/[id]/getServerSideProps";
+
 type Props = {
-  id: string;
-  resetPasswordRequest: ResetPasswordRequest;
-  csrfToken: string;
+  requestId: string;
+  isRequestExpired: boolean;
+  csrfToken: string | undefined;
 };
 
-export default function Page({ resetPasswordRequest, csrfToken }: Props) {
+export default function Page({ requestId, isRequestExpired, csrfToken }: Props) {
   const { t } = useLocale();
-  const [loading, setLoading] = React.useState(false);
-  const [, setError] = React.useState<{ message: string } | null>(null);
-  const [success, setSuccess] = React.useState(false);
-
-  const [password, setPassword] = React.useState("");
+  const formMethods = useForm<{ new_password: string }>();
+  const success = formMethods.formState.isSubmitSuccessful;
+  const loading = formMethods.formState.isSubmitting;
+  const passwordValue = formMethods.watch("new_password");
+  const isEmpty = passwordValue?.length === 0;
 
   const submitChangePassword = async ({ password, requestId }: { password: string; requestId: string }) => {
-    try {
-      const res = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        body: JSON.stringify({ requestId: requestId, password: password }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        setError(json);
-      } else {
-        setSuccess(true);
-      }
-
-      return json;
-    } catch (reason) {
-      setError({ message: t("unexpected_error_try_again") });
-    } finally {
-      setLoading(false);
-    }
+    const res = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ requestId, password }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+    const json = await res.json();
+    if (!res.ok) return formMethods.setError("new_password", { type: "server", message: json.message });
   };
-
-  const debouncedChangePassword = debounce(submitChangePassword, 250);
 
   const Success = () => {
     return (
       <>
         <div className="space-y-6">
           <div>
-            <h2 className="font-cal mt-6 text-center text-3xl font-extrabold text-gray-900">
+            <h2 className="font-cal text-emphasis mt-6 text-center text-3xl font-extrabold">
               {t("password_updated")}
             </h2>
           </div>
@@ -77,8 +60,8 @@ export default function Page({ resetPasswordRequest, csrfToken }: Props) {
       <>
         <div className="space-y-6">
           <div>
-            <h2 className="font-cal mt-6 text-center text-3xl font-extrabold text-gray-900">{t("whoops")}</h2>
-            <h2 className="text-center text-3xl font-extrabold text-gray-900">{t("request_is_expired")}</h2>
+            <h2 className="font-cal text-emphasis mt-6 text-center text-3xl font-extrabold">{t("whoops")}</h2>
+            <h2 className="text-emphasis text-center text-3xl font-extrabold">{t("request_is_expired")}</h2>
           </div>
           <p>{t("request_is_expired_instructions")}</p>
           <Link href="/auth/forgot-password" passHref legacyBehavior>
@@ -93,11 +76,6 @@ export default function Page({ resetPasswordRequest, csrfToken }: Props) {
     );
   };
 
-  const isRequestExpired = useMemo(() => {
-    const now = dayjs();
-    return dayjs(resetPasswordRequest.expires).isBefore(now);
-  }, [resetPasswordRequest]);
-
   return (
     <AuthContainer
       showLogo
@@ -107,38 +85,37 @@ export default function Page({ resetPasswordRequest, csrfToken }: Props) {
       {isRequestExpired && <Expired />}
       {!isRequestExpired && !success && (
         <>
-          <form
+          <Form
             className="space-y-6"
-            onSubmit={async (e) => {
-              e.preventDefault();
-
-              if (!password) {
-                return;
-              }
-
-              if (loading) {
-                return;
-              }
-
-              setLoading(true);
-              setError(null);
-              setSuccess(false);
-
-              await debouncedChangePassword({ password, requestId: resetPasswordRequest.id });
-            }}
-            action="#">
+            form={formMethods}
+            style={
+              {
+                "--cal-brand": "#111827",
+                "--cal-brand-emphasis": "#101010",
+                "--cal-brand-text": "white",
+                "--cal-brand-subtle": "#9CA3AF",
+              } as CSSProperties
+            }
+            handleSubmit={async (values) => {
+              await submitChangePassword({
+                password: values.new_password,
+                requestId,
+              });
+            }}>
             <input name="csrfToken" type="hidden" defaultValue={csrfToken} hidden />
             <div className="mt-1">
-              <TextField
+              <PasswordField
+                {...formMethods.register("new_password", {
+                  minLength: {
+                    message: t("password_hint_min"),
+                    value: 7, // We don't have user here so we can't check if they are admin or not
+                  },
+                  pattern: {
+                    message: "Should contain a number, uppercase and lowercase letters",
+                    value: /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[a-zA-Z]).*$/gm,
+                  },
+                })}
                 label={t("new_password")}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                }}
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="password"
-                required
               />
             </div>
 
@@ -147,12 +124,12 @@ export default function Page({ resetPasswordRequest, csrfToken }: Props) {
                 loading={loading}
                 color="primary"
                 type="submit"
-                disabled={loading}
+                disabled={loading || isEmpty}
                 className="w-full justify-center">
                 {t("reset_password")}
               </Button>
             </div>
-          </form>
+          </Form>
         </>
       )}
       {!isRequestExpired && success && (
@@ -164,34 +141,5 @@ export default function Page({ resetPasswordRequest, csrfToken }: Props) {
   );
 }
 
-export async function getServerSideProps(context: GetServerSidePropsContext) {
-  const id = context.params?.id as string;
-
-  try {
-    const resetPasswordRequest = await prisma.resetPasswordRequest.findUniqueOrThrow({
-      where: {
-        id,
-      },
-      select: {
-        id: true,
-        expires: true,
-      },
-    });
-
-    return {
-      props: {
-        resetPasswordRequest: {
-          ...resetPasswordRequest,
-          expires: resetPasswordRequest.expires.toString(),
-        },
-        id,
-        csrfToken: await getCsrfToken({ req: context.req }),
-        ...(await serverSideTranslations(context.locale || "en", ["common"])),
-      },
-    };
-  } catch (reason) {
-    return {
-      notFound: true,
-    };
-  }
-}
+Page.PageWrapper = PageWrapper;
+export { getServerSideProps };

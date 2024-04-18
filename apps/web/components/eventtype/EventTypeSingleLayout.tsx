@@ -1,16 +1,20 @@
 import type { TFunction } from "next-i18next";
-import { useRouter } from "next/router";
-import type { EventTypeSetupProps, FormValues } from "pages/event-types/[type]";
+import { Trans } from "next-i18next";
+import { useRouter } from "next/navigation";
+import type { EventTypeSetupProps } from "pages/event-types/[type]";
 import { useMemo, useState, Suspense } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import { TbWebhook } from "react-icons/tb";
 
+import useLockedFieldsManager from "@calcom/features/ee/managed-event-types/hooks/useLockedFieldsManager";
+import { EventTypeEmbedButton, EventTypeEmbedDialog } from "@calcom/features/embed/EventTypeEmbed";
+import type { FormValues, AvailabilityOption } from "@calcom/features/eventtypes/lib/types";
 import Shell from "@calcom/features/shell/Shell";
 import { classNames } from "@calcom/lib";
-import { CAL_URL } from "@calcom/lib/constants";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import { HttpError } from "@calcom/lib/http-error";
+import { SchedulingType } from "@calcom/prisma/enums";
 import { trpc, TRPCClientError } from "@calcom/trpc/react";
+import type { DialogProps, VerticalTabItemProps } from "@calcom/ui";
 import {
   Button,
   ButtonGroup,
@@ -24,6 +28,7 @@ import {
   DropdownMenuTrigger,
   HorizontalTabs,
   Label,
+  Icon,
   showToast,
   Skeleton,
   Switch,
@@ -31,23 +36,6 @@ import {
   VerticalDivider,
   VerticalTabs,
 } from "@calcom/ui";
-import {
-  FiLink,
-  FiCalendar,
-  FiClock,
-  FiSliders,
-  FiRepeat,
-  FiGrid,
-  FiZap,
-  FiUsers,
-  FiExternalLink,
-  FiCode,
-  FiTrash,
-  FiMoreHorizontal,
-  FiLoader,
-} from "@calcom/ui/components/icon";
-
-import { EmbedButton, EmbedDialog } from "@components/Embed";
 
 type Props = {
   children: React.ReactNode;
@@ -60,64 +48,127 @@ type Props = {
   enabledWorkflowsNumber: number;
   formMethods: UseFormReturn<FormValues>;
   isUpdateMutationLoading?: boolean;
+  availability?: AvailabilityOption;
+  isUserOrganizationAdmin: boolean;
+  bookerUrl: string;
+  activeWebhooksNumber: number;
 };
 
-function getNavigation(props: {
+type getNavigationProps = {
   t: TFunction;
-  eventType: Props["eventType"];
+  length: number;
+  id: number;
+  multipleDuration?: EventTypeSetupProps["eventType"]["metadata"]["multipleDuration"];
   enabledAppsNumber: number;
   enabledWorkflowsNumber: number;
   installedAppsNumber: number;
-}) {
-  const { eventType, t, enabledAppsNumber, installedAppsNumber, enabledWorkflowsNumber } = props;
-  const duration =
-    eventType.metadata?.multipleDuration?.map((duration) => ` ${duration}`) || eventType.length;
+  availability: AvailabilityOption | undefined;
+};
+
+function getNavigation({
+  length,
+  id,
+  multipleDuration,
+  t,
+  enabledAppsNumber,
+  installedAppsNumber,
+  enabledWorkflowsNumber,
+}: getNavigationProps) {
+  const duration = multipleDuration?.map((duration) => ` ${duration}`) || length;
 
   return [
     {
       name: "event_setup_tab_title",
-      href: `/event-types/${eventType.id}?tabName=setup`,
-      icon: FiLink,
+      href: `/event-types/${id}?tabName=setup`,
+      icon: "link",
       info: `${duration} ${t("minute_timeUnit")}`, // TODO: Get this from props
     },
     {
-      name: "availability",
-      href: `/event-types/${eventType.id}?tabName=availability`,
-      icon: FiCalendar,
-      info: `default_schedule_name`, // TODO: Get this from props
-    },
-    {
       name: "event_limit_tab_title",
-      href: `/event-types/${eventType.id}?tabName=limits`,
-      icon: FiClock,
+      href: `/event-types/${id}?tabName=limits`,
+      icon: "clock",
       info: `event_limit_tab_description`,
     },
     {
       name: "event_advanced_tab_title",
-      href: `/event-types/${eventType.id}?tabName=advanced`,
-      icon: FiSliders,
+      href: `/event-types/${id}?tabName=advanced`,
+      icon: "sliders-vertical",
       info: `event_advanced_tab_description`,
     },
     {
       name: "recurring",
-      href: `/event-types/${eventType.id}?tabName=recurring`,
-      icon: FiRepeat,
+      href: `/event-types/${id}?tabName=recurring`,
+      icon: "repeat",
       info: `recurring_event_tab_description`,
     },
     {
       name: "apps",
-      href: `/event-types/${eventType.id}?tabName=apps`,
-      icon: FiGrid,
+      href: `/event-types/${id}?tabName=apps`,
+      icon: "grid-3x3",
       //TODO: Handle proper translation with count handling
       info: `${installedAppsNumber} apps, ${enabledAppsNumber} ${t("active")}`,
     },
     {
       name: "workflows",
-      href: `/event-types/${eventType.id}?tabName=workflows`,
-      icon: FiZap,
+      href: `/event-types/${id}?tabName=workflows`,
+      icon: "zap",
       info: `${enabledWorkflowsNumber} ${t("active")}`,
     },
-  ];
+  ] satisfies VerticalTabItemProps[];
+}
+
+function DeleteDialog({
+  isManagedEvent,
+  eventTypeId,
+  open,
+  onOpenChange,
+}: { isManagedEvent: string; eventTypeId: number } & Pick<DialogProps, "open" | "onOpenChange">) {
+  const utils = trpc.useUtils();
+  const { t } = useLocale();
+  const router = useRouter();
+  const deleteMutation = trpc.viewer.eventTypes.delete.useMutation({
+    onSuccess: async () => {
+      await utils.viewer.eventTypes.invalidate();
+      showToast(t("event_type_deleted_successfully"), "success");
+      router.push("/event-types");
+      onOpenChange?.(false);
+    },
+    onError: (err) => {
+      if (err instanceof HttpError) {
+        const message = `${err.statusCode}: ${err.message}`;
+        showToast(message, "error");
+        onOpenChange?.(false);
+      } else if (err instanceof TRPCClientError) {
+        showToast(err.message, "error");
+      }
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <ConfirmationDialogContent
+        isPending={deleteMutation.isPending}
+        variety="danger"
+        title={t(`delete${isManagedEvent}_event_type`)}
+        confirmBtnText={t(`confirm_delete_event_type`)}
+        loadingText={t(`confirm_delete_event_type`)}
+        onConfirm={(e) => {
+          e.preventDefault();
+          deleteMutation.mutate({ id: eventTypeId });
+        }}>
+        <p className="mt-5">
+          <Trans
+            i18nKey={`delete${isManagedEvent}_event_type_description`}
+            components={{ li: <li />, ul: <ul className="ml-4 list-disc" /> }}>
+            <ul>
+              <li>Members assigned to this event type will also have their event types deleted.</li>
+              <li>Anyone who they&apos;ve shared their link with will no longer be able to book using it.</li>
+            </ul>
+          </Trans>
+        </p>
+      </ConfirmationDialogContent>
+    </Dialog>
+  );
 }
 
 function EventTypeSingleLayout({
@@ -131,152 +182,249 @@ function EventTypeSingleLayout({
   enabledWorkflowsNumber,
   isUpdateMutationLoading,
   formMethods,
+  availability,
+  isUserOrganizationAdmin,
+  bookerUrl,
+  activeWebhooksNumber,
 }: Props) {
-  const utils = trpc.useContext();
   const { t } = useLocale();
-  const router = useRouter();
+  const eventTypesLockedByOrg = eventType.team?.parent?.organizationSettings?.lockEventTypeCreationForUsers;
+
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  const hasPermsToDelete = currentUserMembership?.role !== "MEMBER" || !currentUserMembership;
+  const hasPermsToDelete =
+    currentUserMembership?.role !== "MEMBER" ||
+    !currentUserMembership ||
+    formMethods.getValues("schedulingType") === SchedulingType.MANAGED ||
+    isUserOrganizationAdmin;
 
-  const deleteMutation = trpc.viewer.eventTypes.delete.useMutation({
-    onSuccess: async () => {
-      await utils.viewer.eventTypes.invalidate();
-      showToast(t("event_type_deleted_successfully"), "success");
-      await router.push("/event-types");
-      setDeleteDialogOpen(false);
-    },
-    onError: (err) => {
-      if (err instanceof HttpError) {
-        const message = `${err.statusCode}: ${err.message}`;
-        showToast(message, "error");
-        setDeleteDialogOpen(false);
-      } else if (err instanceof TRPCClientError) {
-        showToast(err.message, "error");
-      }
-    },
+  const { isManagedEventType, isChildrenManagedEventType } = useLockedFieldsManager({
+    eventType,
+    translate: t,
+    formMethods,
   });
 
+  const length = formMethods.watch("length");
+  const multipleDuration = formMethods.watch("metadata")?.multipleDuration;
+
+  const watchSchedulingType = formMethods.watch("schedulingType");
+  const watchChildrenCount = formMethods.watch("children").length;
   // Define tab navigation here
   const EventTypeTabs = useMemo(() => {
-    const navigation = getNavigation({
+    const navigation: VerticalTabItemProps[] = getNavigation({
       t,
-      eventType,
+      length,
+      multipleDuration,
+      id: formMethods.getValues("id"),
       enabledAppsNumber,
       installedAppsNumber,
       enabledWorkflowsNumber,
+      availability,
+    });
+
+    navigation.splice(1, 0, {
+      name: "availability",
+      href: `/event-types/${formMethods.getValues("id")}?tabName=availability`,
+      icon: "calendar",
+      info:
+        isManagedEventType || isChildrenManagedEventType
+          ? formMethods.getValues("schedule") === null
+            ? "members_default_schedule"
+            : isChildrenManagedEventType
+            ? `${
+                formMethods.getValues("scheduleName")
+                  ? `${formMethods.getValues("scheduleName")} - ${t("managed")}`
+                  : `default_schedule_name`
+              }`
+            : formMethods.getValues("scheduleName") ?? `default_schedule_name`
+          : formMethods.getValues("scheduleName") ?? `default_schedule_name`,
     });
     // If there is a team put this navigation item within the tabs
     if (team) {
       navigation.splice(2, 0, {
         name: "assignment",
-        href: `/event-types/${eventType.id}?tabName=team`,
-        icon: FiUsers,
-        info: eventType.schedulingType === "COLLECTIVE" ? "collective" : "round_robin",
+        href: `/event-types/${formMethods.getValues("id")}?tabName=team`,
+        icon: "users",
+        info: `${t(watchSchedulingType?.toLowerCase() ?? "")}${
+          isManagedEventType ? ` - ${t("number_member", { count: watchChildrenCount || 0 })}` : ""
+        }`,
       });
+    }
+    const showWebhooks = !(isManagedEventType || isChildrenManagedEventType);
+    if (showWebhooks) {
+      if (team) {
+        navigation.push({
+          name: "instant_tab_title",
+          href: `/event-types/${eventType.id}?tabName=instant`,
+          icon: "phone-call",
+          info: `instant_event_tab_description`,
+        });
+      }
       navigation.push({
         name: "webhooks",
-        href: `/event-types/${eventType.id}?tabName=webhooks`,
-        icon: TbWebhook,
-        info: `${eventType.webhooks.filter((webhook) => webhook.active).length} ${t("active")}`,
+        href: `/event-types/${formMethods.getValues("id")}?tabName=webhooks`,
+        icon: "webhook",
+        info: `${activeWebhooksNumber} ${t("active")}`,
+      });
+    }
+    const hidden = true; // hidden while in alpha trial. you can access it with tabName=ai
+    if (team && hidden) {
+      navigation.push({
+        name: "Cal.ai",
+        href: `/event-types/${eventType.id}?tabName=ai`,
+        icon: "sparkles",
+        info: "cal_ai_event_tab_description", // todo `cal_ai_event_tab_description`,
       });
     }
     return navigation;
-  }, [t, eventType, installedAppsNumber, enabledAppsNumber, enabledWorkflowsNumber, team]);
+  }, [
+    t,
+    enabledAppsNumber,
+    installedAppsNumber,
+    enabledWorkflowsNumber,
+    availability,
+    isManagedEventType,
+    isChildrenManagedEventType,
+    team,
+    length,
+    multipleDuration,
+    formMethods.getValues("id"),
+    watchSchedulingType,
+    watchChildrenCount,
+    activeWebhooksNumber,
+  ]);
 
-  const permalink = `${CAL_URL}/${team ? `team/${team.slug}` : eventType.users[0].username}/${
-    eventType.slug
-  }`;
+  const permalink = `${bookerUrl}/${
+    team ? `${!team.parentId ? "team/" : ""}${team.slug}` : formMethods.getValues("users")[0].username
+  }/${eventType.slug}`;
 
-  const embedLink = `${team ? `team/${team.slug}` : eventType.users[0].username}/${eventType.slug}`;
-
+  const embedLink = `${
+    team ? `team/${team.slug}` : formMethods.getValues("users")[0].username
+  }/${formMethods.getValues("slug")}`;
+  const isManagedEvent = formMethods.getValues("schedulingType") === SchedulingType.MANAGED ? "_managed" : "";
+  // const title = formMethods.watch("title");
   return (
     <Shell
       backPath="/event-types"
-      title={eventType.title + " | " + t("event_type")}
+      title={`${eventType.title} | ${t("event_type")}`}
       heading={eventType.title}
       CTA={
         <div className="flex items-center justify-end">
-          <div className="hidden items-center rounded-md px-2 sm:hover:bg-gray-100 lg:flex">
-            <Skeleton
-              as={Label}
-              htmlFor="hiddenSwitch"
-              className="mt-2 hidden cursor-pointer self-center whitespace-nowrap pr-2 sm:inline">
-              {t("hide_from_profile")}
-            </Skeleton>
-            <Switch
-              id="hiddenSwitch"
-              checked={formMethods.watch("hidden")}
-              onCheckedChange={(e) => {
-                formMethods.setValue("hidden", e);
-              }}
-            />
-          </div>
-          <VerticalDivider className="hidden lg:block" />
+          {!formMethods.getValues("metadata")?.managedEventConfig && (
+            <>
+              <div
+                className={classNames(
+                  "sm:hover:bg-muted hidden cursor-pointer items-center rounded-md",
+                  formMethods.watch("hidden") ? "px-2" : "",
+                  "lg:flex"
+                )}>
+                {formMethods.watch("hidden") && (
+                  <Skeleton
+                    as={Label}
+                    htmlFor="hiddenSwitch"
+                    className="mt-2 hidden cursor-pointer self-center whitespace-nowrap pr-2 sm:inline">
+                    {t("hidden")}
+                  </Skeleton>
+                )}
+                <Tooltip
+                  sideOffset={4}
+                  content={
+                    formMethods.watch("hidden") ? t("show_eventtype_on_profile") : t("hide_from_profile")
+                  }
+                  side="bottom">
+                  <div className="self-center rounded-md p-2">
+                    <Switch
+                      id="hiddenSwitch"
+                      disabled={eventTypesLockedByOrg}
+                      checked={!formMethods.watch("hidden")}
+                      onCheckedChange={(e) => {
+                        formMethods.setValue("hidden", !e, { shouldDirty: true });
+                      }}
+                    />
+                  </div>
+                </Tooltip>
+              </div>
+              <VerticalDivider className="hidden lg:block" />
+            </>
+          )}
 
           {/* TODO: Figure out why combined isnt working - works in storybook */}
-          <ButtonGroup combined containerProps={{ className: "border-gray-300 hidden lg:flex" }}>
-            {/* We have to warp this in tooltip as it has a href which disabels the tooltip on buttons */}
-            <Tooltip content={t("preview")}>
-              <Button
-                color="secondary"
-                data-testid="preview-button"
-                target="_blank"
-                variant="icon"
-                href={permalink}
-                rel="noreferrer"
-                StartIcon={FiExternalLink}
-              />
-            </Tooltip>
+          <ButtonGroup combined containerProps={{ className: "border-default hidden lg:flex" }}>
+            {!isManagedEventType && (
+              <>
+                {/* We have to warp this in tooltip as it has a href which disabels the tooltip on buttons */}
+                <Tooltip content={t("preview")} side="bottom" sideOffset={4}>
+                  <Button
+                    color="secondary"
+                    data-testid="preview-button"
+                    target="_blank"
+                    variant="icon"
+                    href={permalink}
+                    rel="noreferrer"
+                    StartIcon="external-link"
+                  />
+                </Tooltip>
 
-            <Button
-              color="secondary"
-              variant="icon"
-              StartIcon={FiLink}
-              tooltip={t("copy_link")}
-              onClick={() => {
-                navigator.clipboard.writeText(permalink);
-                showToast("Link copied!", "success");
-              }}
-            />
-            <EmbedButton
-              embedUrl={encodeURIComponent(embedLink)}
-              StartIcon={FiCode}
-              color="secondary"
-              variant="icon"
-              tooltip={t("embed")}
-            />
-            <Button
-              color="secondary"
-              variant="icon"
-              StartIcon={FiTrash}
-              tooltip={t("delete")}
-              disabled={!hasPermsToDelete}
-              onClick={() => setDeleteDialogOpen(true)}
-            />
+                <Button
+                  color="secondary"
+                  variant="icon"
+                  StartIcon="link"
+                  tooltip={t("copy_link")}
+                  tooltipSide="bottom"
+                  tooltipOffset={4}
+                  onClick={() => {
+                    navigator.clipboard.writeText(permalink);
+                    showToast("Link copied!", "success");
+                  }}
+                />
+                <EventTypeEmbedButton
+                  embedUrl={encodeURIComponent(embedLink)}
+                  StartIcon="code"
+                  color="secondary"
+                  variant="icon"
+                  namespace=""
+                  tooltip={t("embed")}
+                  tooltipSide="bottom"
+                  tooltipOffset={4}
+                  eventId={formMethods.getValues("id")}
+                />
+              </>
+            )}
+            {!isChildrenManagedEventType && (
+              <Button
+                color="destructive"
+                variant="icon"
+                StartIcon="trash"
+                tooltip={t("delete")}
+                tooltipSide="bottom"
+                tooltipOffset={4}
+                disabled={!hasPermsToDelete}
+                onClick={() => setDeleteDialogOpen(true)}
+              />
+            )}
           </ButtonGroup>
 
           <VerticalDivider className="hidden lg:block" />
 
           <Dropdown>
             <DropdownMenuTrigger asChild>
-              <Button className="lg:hidden" StartIcon={FiMoreHorizontal} variant="icon" color="secondary" />
+              <Button className="lg:hidden" StartIcon="ellipsis" variant="icon" color="secondary" />
             </DropdownMenuTrigger>
             <DropdownMenuContent style={{ minWidth: "200px" }}>
-              <DropdownMenuItem className="focus:ring-gray-100">
+              <DropdownMenuItem className="focus:ring-muted">
                 <DropdownItem
                   target="_blank"
                   type="button"
-                  StartIcon={FiExternalLink}
+                  StartIcon="external-link"
                   href={permalink}
                   rel="noreferrer">
                   {t("preview")}
                 </DropdownItem>
               </DropdownMenuItem>
-              <DropdownMenuItem className="focus:ring-gray-100">
+              <DropdownMenuItem className="focus:ring-muted">
                 <DropdownItem
                   type="button"
-                  StartIcon={FiLink}
+                  StartIcon="link"
                   onClick={() => {
                     navigator.clipboard.writeText(permalink);
                     showToast("Link copied!", "success");
@@ -284,62 +432,64 @@ function EventTypeSingleLayout({
                   {t("copy_link")}
                 </DropdownItem>
               </DropdownMenuItem>
-              <DropdownMenuItem className="focus:ring-gray-100">
+              <DropdownMenuItem className="focus:ring-muted">
                 <DropdownItem
                   type="button"
                   color="destructive"
-                  StartIcon={FiTrash}
+                  StartIcon="trash"
                   disabled={!hasPermsToDelete}
                   onClick={() => setDeleteDialogOpen(true)}>
                   {t("delete")}
                 </DropdownItem>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <div className="flex h-9 flex-row items-center justify-between py-2 px-4 sm:hover:bg-gray-100">
+              <div className="hover:bg-subtle flex h-9 cursor-pointer flex-row items-center justify-between px-4 py-2">
                 <Skeleton
                   as={Label}
                   htmlFor="hiddenSwitch"
                   className="mt-2 inline cursor-pointer self-center pr-2 ">
-                  {t("hide_from_profile")}
+                  {formMethods.watch("hidden") ? t("show_eventtype_on_profile") : t("hide_from_profile")}
                 </Skeleton>
                 <Switch
                   id="hiddenSwitch"
-                  checked={formMethods.watch("hidden")}
+                  checked={!formMethods.watch("hidden")}
                   onCheckedChange={(e) => {
-                    formMethods.setValue("hidden", e);
+                    formMethods.setValue("hidden", !e, { shouldDirty: true });
                   }}
                 />
               </div>
             </DropdownMenuContent>
           </Dropdown>
-          <div className="border-l-2 border-gray-300" />
+          <div className="border-default border-l-2" />
           <Button
             className="ml-4 lg:ml-0"
             type="submit"
-            loading={formMethods.formState.isSubmitting || isUpdateMutationLoading}
+            loading={isUpdateMutationLoading}
+            disabled={!formMethods.formState.isDirty}
             data-testid="update-eventtype"
             form="event-type-form">
             {t("save")}
           </Button>
         </div>
       }>
-      <Suspense fallback={<FiLoader />}>
+      <Suspense fallback={<Icon name="loader" />}>
         <div className="flex flex-col xl:flex-row xl:space-x-6">
           <div className="hidden xl:block">
             <VerticalTabs
               className="primary-navigation"
               tabs={EventTypeTabs}
               sticky
-              linkProps={{ shallow: true }}
+              linkShallow
+              itemClassname="items-start"
             />
           </div>
           <div className="p-2 md:mx-0 md:p-0 xl:hidden">
-            <HorizontalTabs tabs={EventTypeTabs} linkProps={{ shallow: true }} />
+            <HorizontalTabs tabs={EventTypeTabs} linkShallow />
           </div>
           <div className="w-full ltr:mr-2 rtl:ml-2">
             <div
               className={classNames(
-                "mt-4 rounded-md  border-gray-200 bg-white sm:mx-0 xl:mt-0",
+                "bg-default border-subtle  mt-4 rounded-md sm:mx-0 xl:mt-0",
                 disableBorder ? "border-0 " : "p-2 md:border md:p-6"
               )}>
               {children}
@@ -347,21 +497,14 @@ function EventTypeSingleLayout({
           </div>
         </div>
       </Suspense>
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <ConfirmationDialogContent
-          isLoading={deleteMutation.isLoading}
-          variety="danger"
-          title={t("delete_event_type")}
-          confirmBtnText={t("confirm_delete_event_type")}
-          loadingText={t("confirm_delete_event_type")}
-          onConfirm={(e) => {
-            e.preventDefault();
-            deleteMutation.mutate({ id: eventType.id });
-          }}>
-          {t("delete_event_type_description")}
-        </ConfirmationDialogContent>
-      </Dialog>
-      <EmbedDialog />
+      <DeleteDialog
+        eventTypeId={eventType.id}
+        isManagedEvent={isManagedEvent}
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      />
+
+      <EventTypeEmbedDialog />
     </Shell>
   );
 }

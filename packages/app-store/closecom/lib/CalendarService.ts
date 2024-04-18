@@ -58,7 +58,7 @@ export default class CloseComCalendarService implements Calendar {
 
   constructor(credential: CredentialPayload) {
     this.integrationName = "closecom_other_calendar";
-    this.log = logger.getChildLogger({ prefix: [`[[lib] ${this.integrationName}`] });
+    this.log = logger.getSubLogger({ prefix: [`[[lib] ${this.integrationName}`] });
 
     const parsedCredentialKey = apiKeySchema.safeParse(credential.key);
 
@@ -113,6 +113,7 @@ export default class CloseComCalendarService implements Calendar {
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async updateEvent(uid: string, event: CalendarEvent): Promise<any> {
     return await this.closeComUpdateCustomActivity(uid, event);
   }
@@ -122,14 +123,14 @@ export default class CloseComCalendarService implements Calendar {
   }
 
   async getAvailability(
-    dateFrom: string,
-    dateTo: string,
-    selectedCalendars: IntegrationCalendar[]
+    _dateFrom: string,
+    _dateTo: string,
+    _selectedCalendars: IntegrationCalendar[]
   ): Promise<EventBusyDate[]> {
     return Promise.resolve([]);
   }
 
-  async listCalendars(event?: CalendarEvent): Promise<IntegrationCalendar[]> {
+  async listCalendars(_event?: CalendarEvent): Promise<IntegrationCalendar[]> {
     return Promise.resolve([]);
   }
 }

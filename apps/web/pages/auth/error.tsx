@@ -1,15 +1,15 @@
 import type { GetStaticPropsContext } from "next";
 import Link from "next/link";
-import { useRouter } from "next/router";
 import z from "zod";
 
+import { useCompatSearchParams } from "@calcom/lib/hooks/useCompatSearchParams";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import { Button, SkeletonText } from "@calcom/ui";
-import { FiX } from "@calcom/ui/components/icon";
+import { Button, Icon } from "@calcom/ui";
 
+import PageWrapper from "@components/PageWrapper";
 import AuthContainer from "@components/ui/AuthContainer";
 
-import { ssgInit } from "@server/lib/ssg";
+import { getTranslations } from "@server/lib/getTranslations";
 
 const querySchema = z.object({
   error: z.string().optional(),
@@ -17,26 +17,23 @@ const querySchema = z.object({
 
 export default function Error() {
   const { t } = useLocale();
-  const router = useRouter();
-  const { error } = querySchema.parse(router.query);
+  const searchParams = useCompatSearchParams();
+  const { error } = querySchema.parse(searchParams);
   const isTokenVerificationError = error?.toLowerCase() === "verification";
-  let errorMsg = <SkeletonText />;
-  if (router.isReady) {
-    errorMsg = isTokenVerificationError ? t("token_invalid_expired") : t("error_during_login");
-  }
+  const errorMsg = isTokenVerificationError ? t("token_invalid_expired") : t("error_during_login");
 
   return (
     <AuthContainer title="" description="">
       <div>
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-          <FiX className="h-6 w-6 text-red-600" />
+        <div className="bg-error mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+          <Icon name="x" className="h-6 w-6 text-red-600" />
         </div>
         <div className="mt-3 text-center sm:mt-5">
-          <h3 className="text-lg font-medium leading-6 text-gray-900" id="modal-title">
+          <h3 className="text-emphasis text-lg font-medium leading-6" id="modal-title">
             {error}
           </h3>
           <div className="mt-2">
-            <p className="text-sm text-gray-500">{errorMsg}</p>
+            <p className="text-subtle text-sm">{errorMsg}</p>
           </div>
         </div>
       </div>
@@ -49,12 +46,14 @@ export default function Error() {
   );
 }
 
+Error.PageWrapper = PageWrapper;
+
 export const getStaticProps = async (context: GetStaticPropsContext) => {
-  const ssr = await ssgInit(context);
+  const i18n = await getTranslations(context);
 
   return {
     props: {
-      trpcState: ssr.dehydrate(),
+      i18n,
     },
   };
 };

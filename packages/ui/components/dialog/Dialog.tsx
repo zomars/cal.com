@@ -1,12 +1,15 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { useRouter } from "next/router";
-import type { ReactNode } from "react";
-import React, { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import type { ForwardRefExoticComponent, ReactElement, ReactNode } from "react";
+import React, { useMemo, useState } from "react";
 
+import { Dialog as PlatformDialogPrimitives, useIsPlatform } from "@calcom/atoms/monorepo";
 import classNames from "@calcom/lib/classNames";
+import { useCompatSearchParams } from "@calcom/lib/hooks/useCompatSearchParams";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import type { SVGComponent } from "@calcom/types/SVGComponent";
 
+import type { IconName } from "../..";
+import { Icon } from "../..";
 import type { ButtonProps } from "../../components/button";
 import { Button } from "../../components/button";
 
@@ -14,77 +17,107 @@ export type DialogProps = React.ComponentProps<(typeof DialogPrimitive)["Root"]>
   name?: string;
   clearQueryParamsOnClose?: string[];
 };
-export function Dialog(props: DialogProps) {
-  const router = useRouter();
-  const { children, name, ...dialogProps } = props;
-  // only used if name is set
-  const [open, setOpen] = useState(!!dialogProps.open);
 
+const enum DIALOG_STATE {
+  // Dialog is there in the DOM but not visible.
+  CLOSED = "CLOSED",
+  // State from the time b/w the Dialog is dismissed and the time the "dialog" query param is removed from the URL.
+  CLOSING = "CLOSING",
+  // Dialog is visible.
+  OPEN = "OPEN",
+}
+
+export function Dialog(props: DialogProps) {
+  const isPlatform = useIsPlatform();
+  return !isPlatform ? <WebDialog {...props} /> : <PlatformDialogPrimitives.Dialog {...props} />;
+}
+
+function WebDialog(props: DialogProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useCompatSearchParams();
+  const newSearchParams = new URLSearchParams(searchParams ?? undefined);
+  const { children, name, ...dialogProps } = props;
+
+  // only used if name is set
+  const [dialogState, setDialogState] = useState(dialogProps.open ? DIALOG_STATE.OPEN : DIALOG_STATE.CLOSED);
+  const shouldOpenDialog = newSearchParams.get("dialog") === name;
   if (name) {
     const clearQueryParamsOnClose = ["dialog", ...(props.clearQueryParamsOnClose || [])];
     dialogProps.onOpenChange = (open) => {
       if (props.onOpenChange) {
         props.onOpenChange(open);
       }
+
       // toggles "dialog" query param
       if (open) {
-        router.query["dialog"] = name;
+        newSearchParams.set("dialog", name);
       } else {
-        const query = router.query;
         clearQueryParamsOnClose.forEach((queryParam) => {
-          delete query[queryParam];
+          newSearchParams.delete(queryParam);
         });
-        router.push(
-          {
-            pathname: router.pathname,
-            query,
-          },
-          undefined,
-          { shallow: true }
-        );
+        router.push(`${pathname}?${newSearchParams.toString()}`);
       }
-      setOpen(open);
+      setDialogState(open ? DIALOG_STATE.OPEN : DIALOG_STATE.CLOSING);
     };
-    // handles initial state
-    if (!open && router.query["dialog"] === name) {
-      setOpen(true);
+
+    if (dialogState === DIALOG_STATE.CLOSED && shouldOpenDialog) {
+      setDialogState(DIALOG_STATE.OPEN);
     }
+
+    if (dialogState === DIALOG_STATE.CLOSING && !shouldOpenDialog) {
+      setDialogState(DIALOG_STATE.CLOSED);
+    }
+
     // allow overriding
     if (!("open" in dialogProps)) {
-      dialogProps.open = open;
+      dialogProps.open = dialogState === DIALOG_STATE.OPEN ? true : false;
     }
   }
 
   return <DialogPrimitive.Root {...dialogProps}>{children}</DialogPrimitive.Root>;
 }
+
 type DialogContentProps = React.ComponentProps<(typeof DialogPrimitive)["Content"]> & {
   size?: "xl" | "lg" | "md";
   type?: "creation" | "confirmation";
   title?: string;
-  description?: string | JSX.Element | undefined;
+  description?: string | JSX.Element | null;
   closeText?: string;
   actionDisabled?: boolean;
-  Icon?: SVGComponent;
+  Icon?: IconName;
   enableOverflow?: boolean;
 };
 
 // enableOverflow:- use this prop whenever content inside DialogContent could overflow and require scrollbar
 export const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
-  ({ children, title, Icon, enableOverflow, type = "creation", ...props }, forwardedRef) => {
+  ({ children, title, Icon: icon, enableOverflow, type = "creation", ...props }, forwardedRef) => {
+    const isPlatform = useIsPlatform();
+    const [Portal, Overlay, Content] = useMemo(
+      () =>
+        isPlatform
+          ? [
+              ({ children }: { children: ReactElement | ReactElement[] }) => <>{children}</>,
+              PlatformDialogPrimitives.DialogOverlay,
+              PlatformDialogPrimitives.DialogContent,
+            ]
+          : [DialogPrimitive.Portal, DialogPrimitive.Overlay, DialogPrimitive.Content],
+      [isPlatform]
+    );
     return (
-      <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fadeIn fixed inset-0 z-50 bg-gray-500 bg-opacity-80 transition-opacity" />
-        <DialogPrimitive.Content
+      <Portal>
+        <Overlay className="fadeIn fixed inset-0 z-50 bg-neutral-800 bg-opacity-70 transition-opacity dark:bg-opacity-70 " />
+        <Content
           {...props}
           className={classNames(
-            "fadeIn fixed left-1/2 top-1/2 z-50 min-w-[360px] -translate-x-1/2 -translate-y-1/2 rounded bg-white text-left shadow-xl focus-visible:outline-none sm:w-full sm:align-middle",
+            "fadeIn bg-default scroll-bar fixed left-1/2 top-1/2 z-50 w-full max-w-[22rem] -translate-x-1/2 -translate-y-1/2 rounded-md text-left shadow-xl focus-visible:outline-none sm:align-middle",
             props.size == "xl"
-              ? "p-8 sm:max-w-[90rem]"
+              ? "px-8 pt-8 sm:max-w-[90rem]"
               : props.size == "lg"
-              ? "p-8 sm:max-w-[70rem]"
+              ? "px-8 pt-8 sm:max-w-[70rem]"
               : props.size == "md"
-              ? "p-8 sm:max-w-[48rem]"
-              : "p-8 sm:max-w-[35rem]",
+              ? "px-8 pt-8 sm:max-w-[48rem]"
+              : "px-8 pt-8 sm:max-w-[35rem]",
             "max-h-[95vh]",
             enableOverflow ? "overflow-auto" : "overflow-visible",
             `${props.className || ""}`
@@ -93,24 +126,27 @@ export const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps
           {type === "creation" && (
             <div>
               <DialogHeader title={title} subtitle={props.description} />
-              <div className="flex flex-col space-y-6">{children}</div>
+              <div data-testid="dialog-creation" className="flex flex-col">
+                {children}
+              </div>
             </div>
           )}
           {type === "confirmation" && (
             <div className="flex">
-              {Icon && (
-                <div className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-300">
-                  <Icon className="h-4 w-4 text-black" />
+              {icon && (
+                <div className="bg-emphasis mr-4 inline-flex h-10 w-10 items-center justify-center rounded-full">
+                  <Icon name={icon} className="text-emphasis h-4 w-4" />
                 </div>
               )}
               <div className="w-full">
                 <DialogHeader title={title} subtitle={props.description} />
-                <div className="flex flex-col space-y-6">{children}</div>
+                <div data-testid="dialog-confirmation">{children}</div>
               </div>
             </div>
           )}
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
+          {!type && children}
+        </Content>
+      </Portal>
     );
   }
 );
@@ -118,32 +154,75 @@ export const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps
 type DialogHeaderProps = {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
-};
+} & React.HTMLAttributes<HTMLDivElement>;
 
 export function DialogHeader(props: DialogHeaderProps) {
   if (!props.title) return null;
 
   return (
     <div className="mb-4">
-      <h3 className="leading-20 text-semibold font-cal pb-1 text-xl text-gray-900" id="modal-title">
+      <h3
+        data-testid="dialog-title"
+        className="leading-20 text-semibold font-cal text-emphasis pb-1 text-xl"
+        id="modal-title">
         {props.title}
       </h3>
-      {props.subtitle && <div className="text-sm text-gray-500">{props.subtitle}</div>}
+      {props.subtitle && <div className="text-subtle text-sm">{props.subtitle}</div>}
     </div>
   );
 }
 
-export function DialogFooter(props: { children: ReactNode }) {
-  return <div className="mt-7 flex justify-end space-x-2 rtl:space-x-reverse ">{props.children}</div>;
+type DialogFooterProps = {
+  children: React.ReactNode;
+  showDivider?: boolean;
+  noSticky?: boolean;
+} & React.HTMLAttributes<HTMLDivElement>;
+
+export function DialogFooter(props: DialogFooterProps) {
+  return (
+    <div className={classNames("bg-default bottom-0", props?.noSticky ? "" : "sticky", props.className)}>
+      {props.showDivider && (
+        // TODO: the -mx-8 is causing overflow in the dialog buttons
+        <hr data-testid="divider" className="border-subtle -mx-8" />
+      )}
+      <div
+        className={classNames(
+          "flex justify-end space-x-2 pb-4 pt-4 rtl:space-x-reverse",
+          !props.showDivider && "pb-8"
+        )}>
+        {props.children}
+      </div>
+    </div>
+  );
 }
 
 DialogContent.displayName = "DialogContent";
 
-export const DialogTrigger = DialogPrimitive.Trigger;
-// export const DialogClose = DialogPrimitive.Close;
+export const DialogTrigger: ForwardRefExoticComponent<
+  DialogPrimitive.DialogTriggerProps & React.RefAttributes<HTMLButtonElement>
+> = React.forwardRef((props, ref) => {
+  const isPlatform = useIsPlatform();
+  return !isPlatform ? (
+    <DialogPrimitive.Trigger {...props} ref={ref} />
+  ) : (
+    <PlatformDialogPrimitives.DialogTrigger {...props} ref={ref} />
+  );
+});
+
+DialogTrigger.displayName = "DialogTrigger";
+
+type DialogCloseProps = {
+  "data-testid"?: string;
+  dialogCloseProps?: React.ComponentProps<(typeof DialogPrimitive)["Close"]>;
+  children?: ReactNode;
+  onClick?: (e: React.MouseEvent<HTMLElement, MouseEvent>) => void;
+  disabled?: boolean;
+  color?: ButtonProps["color"];
+} & React.ComponentProps<typeof Button>;
 
 export function DialogClose(
   props: {
+    "data-testid"?: string;
     dialogCloseProps?: React.ComponentProps<(typeof DialogPrimitive)["Close"]>;
     children?: ReactNode;
     onClick?: (e: React.MouseEvent<HTMLElement, MouseEvent>) => void;
@@ -152,12 +231,23 @@ export function DialogClose(
   } & React.ComponentProps<typeof Button>
 ) {
   const { t } = useLocale();
+  const isPlatform = useIsPlatform();
+  const Close = useMemo(
+    () => (isPlatform ? PlatformDialogPrimitives.DialogClose : DialogPrimitive.Close),
+    [isPlatform]
+  );
+
   return (
-    <DialogPrimitive.Close asChild {...props.dialogCloseProps}>
+    <Close asChild {...props.dialogCloseProps}>
       {/* This will require the i18n string passed in */}
-      <Button color={props.color || "minimal"} {...props}>
+      <Button
+        data-testid={props["data-testid"] || "dialog-rejection"}
+        color={props.color || "minimal"}
+        {...props}>
         {props.children ? props.children : t("Close")}
       </Button>
-    </DialogPrimitive.Close>
+    </Close>
   );
 }
+
+DialogClose.displayName = "WebDialogClose";

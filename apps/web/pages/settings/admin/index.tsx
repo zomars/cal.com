@@ -1,5 +1,8 @@
+"use client";
+
 import { Meta } from "@calcom/ui";
 
+import PageWrapper from "@components/PageWrapper";
 import { getLayout } from "@components/auth/layouts/AdminLayout";
 
 function AdminAppsView() {
@@ -12,5 +15,6 @@ function AdminAppsView() {
 }
 
 AdminAppsView.getLayout = getLayout;
+AdminAppsView.PageWrapper = PageWrapper;
 
 export default AdminAppsView;

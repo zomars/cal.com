@@ -1,4 +1,3 @@
-import { ClockIcon } from "@heroicons/react/outline";
 import { useMutation } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import { useState } from "react";
@@ -7,7 +6,7 @@ import dayjs from "@calcom/dayjs";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
 import logger from "@calcom/lib/logger";
 import { trpc } from "@calcom/trpc/react";
-import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, showToast } from "@calcom/ui";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, Icon, showToast } from "@calcom/ui";
 
 interface IConfirmDialogWipe {
   isOpenDialog: boolean;
@@ -27,7 +26,7 @@ const wipeMyCalAction = async (props: IWipeMyCalAction) => {
   };
   try {
     const endpoint = "/api/integrations/wipemycalother/wipe";
-    return fetch(`${process.env.NEXT_PUBLIC_WEBAPP_URL}` + endpoint, {
+    return fetch(`${process.env.NEXT_PUBLIC_WEBAPP_URL}${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -44,17 +43,17 @@ const wipeMyCalAction = async (props: IWipeMyCalAction) => {
 export const ConfirmDialog = (props: IConfirmDialogWipe) => {
   const { t } = useLocale();
   const { isOpenDialog, setIsOpenDialog } = props;
-  const [isLoading, setIsLoading] = useState(false);
+  const [isPending, setIsPending] = useState(false);
   const today = dayjs();
   const initialDate = today.startOf("day");
   const endDate = today.endOf("day");
   const dateFormat = "ddd, MMM D, YYYY h:mm A";
 
-  const utils = trpc.useContext();
+  const utils = trpc.useUtils();
 
-  const rescheduleApi = useMutation(
-    async () => {
-      setIsLoading(true);
+  const rescheduleApi = useMutation({
+    mutationFn: async () => {
+      setIsPending(true);
       try {
         const result = await wipeMyCalAction({
           initialDate: initialDate.toISOString(),
@@ -66,33 +65,31 @@ export const ConfirmDialog = (props: IConfirmDialogWipe) => {
         }
       } catch (error) {
         showToast(t("unexpected_error_try_again"), "error");
-        // @TODO: notify sentry
+        // @TODO: notify
       }
-      setIsLoading(false);
+      setIsPending(false);
     },
-    {
-      async onSettled() {
-        await utils.viewer.bookings.invalidate();
-      },
-    }
-  );
+    async onSettled() {
+      await utils.viewer.bookings.invalidate();
+    },
+  });
 
   return (
     <Dialog open={isOpenDialog} onOpenChange={setIsOpenDialog}>
       <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
         <div className="flex flex-row space-x-3">
           <div className="flex h-10 w-10 flex-shrink-0 justify-center rounded-full bg-[#FAFAFA]">
-            <ClockIcon className="m-auto h-6 w-6" />
+            <Icon name="clock" className="m-auto h-5 w-5" />
           </div>
           <div className="pt-1">
             <DialogHeader title="Wipe My Calendar" />
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="text-subtle mt-2 text-sm">
               This will cancel all upcoming meetings from: <br />{" "}
-              <strong className="text-black">
+              <strong className="text-emphasis">
                 {initialDate.format(dateFormat)} - {endDate.format(dateFormat)}
               </strong>
             </p>
-            <p className="mt-6 mb-2 text-sm">Are you sure? This can&apos;t be undone</p>
+            <p className="mb-2 mt-6 text-sm">Are you sure? This can&apos;t be undone</p>
           </div>
         </div>
 
@@ -104,7 +101,7 @@ export const ConfirmDialog = (props: IConfirmDialogWipe) => {
           <Button
             color="primary"
             data-testid="send_request"
-            disabled={isLoading}
+            disabled={isPending}
             onClick={async () => {
               try {
                 rescheduleApi.mutate();

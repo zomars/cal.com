@@ -1,7 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AppCategories } from "@prisma/client";
+// eslint-disable-next-line no-restricted-imports
 import { noop } from "lodash";
-import { useRouter } from "next/router";
 import type { FC } from "react";
 import { useReducer, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -10,7 +9,9 @@ import { z } from "zod";
 import AppCategoryNavigation from "@calcom/app-store/_components/AppCategoryNavigation";
 import { appKeysSchemas } from "@calcom/app-store/apps.keys-schemas.generated";
 import { classNames as cs } from "@calcom/lib";
+import { useCompatSearchParams } from "@calcom/lib/hooks/useCompatSearchParams";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
+import { AppCategories } from "@calcom/prisma/enums";
 import type { RouterOutputs } from "@calcom/trpc/react";
 import { trpc } from "@calcom/trpc/react";
 import {
@@ -22,15 +23,15 @@ import {
   DialogFooter,
   EmptyScreen,
   Form,
+  Icon,
   List,
   showToast,
   SkeletonButton,
   SkeletonContainer,
   SkeletonText,
-  TextField,
   Switch,
+  TextField,
 } from "@calcom/ui";
-import { FiAlertCircle, FiEdit } from "@calcom/ui/components/icon";
 
 import AppListCard from "../../../apps/web/components/AppListCard";
 
@@ -46,10 +47,10 @@ const IntegrationContainer = ({
   handleModelOpen: (data: EditModalState) => void;
 }) => {
   const { t } = useLocale();
-  const utils = trpc.useContext();
+  const utils = trpc.useUtils();
   const [disableDialog, setDisableDialog] = useState(false);
 
-  const showKeyModal = () => {
+  const showKeyModal = (fromEnabled?: boolean) => {
     // FIXME: This is preventing the modal from opening for apps that has null keys
     if (app.keys) {
       handleModelOpen({
@@ -58,6 +59,8 @@ const IntegrationContainer = ({
         slug: app.slug,
         type: app.type,
         isOpen: "editKeys",
+        fromEnabled,
+        appName: app.name,
       });
     }
   };
@@ -90,7 +93,7 @@ const IntegrationContainer = ({
           <div className="flex items-center justify-self-end">
             {app.keys && (
               <Button color="secondary" className="mr-2" onClick={() => showKeyModal()}>
-                <FiEdit />
+                <Icon name="pencil" />
               </Button>
             )}
 
@@ -99,8 +102,10 @@ const IntegrationContainer = ({
               onClick={() => {
                 if (app.enabled) {
                   setDisableDialog(true);
+                } else if (app.keys) {
+                  showKeyModal(true);
                 } else {
-                  enableAppMutation.mutate({ slug: app.slug, enabled: app.enabled });
+                  enableAppMutation.mutate({ slug: app.slug, enabled: !app.enabled });
                 }
               }}
             />
@@ -113,7 +118,7 @@ const IntegrationContainer = ({
           title={t("disable_app")}
           variety="danger"
           onConfirm={() => {
-            enableAppMutation.mutate({ slug: app.slug, enabled: app.enabled });
+            enableAppMutation.mutate({ slug: app.slug, enabled: !app.enabled });
           }}>
           {t("disable_app_description")}
         </ConfirmationDialogContent>
@@ -152,7 +157,7 @@ const AdminAppsList = ({
     <form
       {...rest}
       className={
-        classNames?.form ?? "max-w-80 mb-4 rounded-md bg-white px-0 pt-0 md:max-w-full md:px-8 md:pt-10"
+        classNames?.form ?? "max-w-80 bg-default mb-4 rounded-md px-0 pt-0 md:max-w-full md:px-8 md:pt-10"
       }
       onSubmit={(e) => {
         e.preventDefault();
@@ -179,9 +184,12 @@ const EditKeysModal: FC<{
   isOpen: boolean;
   keys: App["keys"];
   handleModelClose: () => void;
+  fromEnabled?: boolean;
+  appName?: string;
 }> = (props) => {
+  const utils = trpc.useUtils();
   const { t } = useLocale();
-  const { dirName, slug, type, isOpen, keys, handleModelClose } = props;
+  const { dirName, slug, type, isOpen, keys, handleModelClose, fromEnabled, appName } = props;
   const appKeySchema = appKeysSchemas[dirName as keyof typeof appKeysSchemas];
 
   const formMethods = useForm({
@@ -190,7 +198,8 @@ const EditKeysModal: FC<{
 
   const saveKeysMutation = trpc.viewer.appsRouter.saveKeys.useMutation({
     onSuccess: () => {
-      showToast(t("keys_have_been_saved"), "success");
+      showToast(fromEnabled ? t("app_is_enabled", { appName }) : t("keys_have_been_saved"), "success");
+      utils.viewer.appsRouter.listLocal.invalidate();
       handleModelClose();
     },
     onError: (error) => {
@@ -211,6 +220,7 @@ const EditKeysModal: FC<{
                 type,
                 keys: values,
                 dirName,
+                fromEnabled,
               })
             }
             className="px-4 pb-4">
@@ -235,7 +245,7 @@ const EditKeysModal: FC<{
             ))}
           </Form>
         )}
-        <DialogFooter>
+        <DialogFooter showDivider className="mt-8">
           <DialogClose onClick={handleModelClose} />
           <Button form="edit-keys" type="submit">
             {t("save")}
@@ -251,16 +261,18 @@ interface EditModalState extends Pick<App, "keys"> {
   dirName: string;
   type: string;
   slug: string;
+  fromEnabled?: boolean;
+  appName?: string;
 }
 
 const AdminAppsListContainer = () => {
+  const searchParams = useCompatSearchParams();
   const { t } = useLocale();
-  const router = useRouter();
-  const { category } = querySchema.parse(router.query);
+  const category = searchParams?.get("category") || AppCategories.calendar;
 
-  const { data: apps, isLoading } = trpc.viewer.appsRouter.listLocal.useQuery(
+  const { data: apps, isPending } = trpc.viewer.appsRouter.listLocal.useQuery(
     { category },
-    { enabled: router.isReady }
+    { enabled: searchParams !== null }
   );
 
   const [modalState, setModalState] = useReducer(
@@ -279,12 +291,12 @@ const AdminAppsListContainer = () => {
 
   const handleModelOpen = (data: EditModalState) => setModalState({ ...data });
 
-  if (isLoading) return <SkeletonLoader />;
+  if (isPending) return <SkeletonLoader />;
 
-  if (!apps) {
+  if (!apps || apps.length === 0) {
     return (
       <EmptyScreen
-        Icon={FiAlertCircle}
+        Icon="circle-alert"
         headline={t("no_available_apps")}
         description={t("no_available_apps_description")}
       />
@@ -310,6 +322,8 @@ const AdminAppsListContainer = () => {
         isOpen={modalState.isOpen === "editKeys"}
         slug={modalState.slug}
         type={modalState.type}
+        fromEnabled={modalState.fromEnabled}
+        appName={modalState.appName}
       />
     </>
   );
@@ -320,7 +334,7 @@ export default AdminAppsList;
 const SkeletonLoader = () => {
   return (
     <SkeletonContainer className="w-[30rem] pr-10">
-      <div className="mt-6 mb-8 space-y-6">
+      <div className="mb-8 mt-6 space-y-6">
         <SkeletonText className="h-8 w-full" />
         <SkeletonText className="h-8 w-full" />
         <SkeletonText className="h-8 w-full" />

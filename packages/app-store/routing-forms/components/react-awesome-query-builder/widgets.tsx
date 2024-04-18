@@ -1,3 +1,4 @@
+import dynamic from "next/dynamic";
 import type { ChangeEvent } from "react";
 import type {
   ButtonGroupProps,
@@ -7,8 +8,12 @@ import type {
   ProviderProps,
 } from "react-awesome-query-builder";
 
-import { Button as CalButton, SelectWithValidation as Select, TextField } from "@calcom/ui";
-import { FiTrash, FiPlus } from "@calcom/ui/components/icon";
+import { Button as CalButton, TextField, TextArea } from "@calcom/ui";
+import { Icon } from "@calcom/ui";
+
+const Select = dynamic(
+  async () => (await import("@calcom/ui")).SelectWithValidation
+) as unknown as typeof import("@calcom/ui").SelectWithValidation;
 
 export type CommonProps<
   TVal extends
@@ -23,6 +28,7 @@ export type CommonProps<
   placeholder?: string;
   readOnly?: boolean;
   className?: string;
+  name?: string;
   label?: string;
   value: TVal;
   setValue: (value: TVal) => void;
@@ -79,13 +85,12 @@ const TextAreaWidget = (props: TextLikeComponentPropsRAQB) => {
 
   const textValue = value || "";
   return (
-    <textarea
+    <TextArea
       value={textValue}
       placeholder={placeholder}
       disabled={readOnly}
       onChange={onChange}
       maxLength={maxLength}
-      className="dark:placeholder:text-darkgray-600 focus:border-brand dark:border-darkgray-300 dark:text-darkgray-900 block w-full rounded-md border-gray-300 text-sm focus:ring-black disabled:bg-gray-200 disabled:hover:cursor-not-allowed dark:bg-transparent dark:selection:bg-green-500 disabled:dark:text-gray-500"
       {...customProps}
       {...remainingProps}
     />
@@ -112,7 +117,6 @@ const TextWidget = (props: TextLikeComponentPropsRAQB) => {
     <TextField
       containerClassName="w-full"
       type={type}
-      className="dark:placeholder:text-darkgray-600 focus:border-brand dark:border-darkgray-300 dark:text-darkgray-900 block w-full rounded-md border-gray-300 text-sm focus:ring-black disabled:bg-gray-200 disabled:hover:cursor-not-allowed dark:bg-transparent dark:selection:bg-green-500 disabled:dark:text-gray-500"
       value={textValue}
       labelSrOnly={noLabel}
       placeholder={placeholder}
@@ -130,7 +134,7 @@ function NumberWidget({ value, setValue, ...remainingProps }: TextLikeComponentP
       type="number"
       labelSrOnly={remainingProps.noLabel}
       containerClassName="w-full"
-      className="dark:placeholder:text-darkgray-600 focus:border-brand dark:border-darkgray-300 dark:text-darkgray-900 block w-full rounded-md border-gray-300 text-sm focus:ring-black disabled:bg-gray-200 disabled:hover:cursor-not-allowed dark:bg-transparent dark:selection:bg-green-500 disabled:dark:text-gray-500"
+      className="bg-default border-default disabled:bg-emphasis focus:ring-brand-default dark:focus:border-emphasis focus:border-subtle block w-full rounded-md text-sm disabled:hover:cursor-not-allowed"
       value={value}
       onChange={(e) => {
         setValue(e.target.value);
@@ -158,15 +162,16 @@ const MultiSelectWidget = ({
     };
   });
 
-  const defaultValue = selectItems.filter((item) => value?.includes(item.value));
+  const optionsFromList = selectItems.filter((item) => value?.includes(item.value));
 
   return (
     <Select
-      className="dark:border-darkgray-300 mb-2 block w-full min-w-0 flex-1 rounded-none rounded-r-sm border-gray-300 dark:bg-transparent dark:text-white dark:selection:bg-green-500 disabled:dark:text-gray-500 sm:text-sm"
+      aria-label="multi-select-dropdown"
+      className="mb-2"
       onChange={(items) => {
         setValue(items?.map((item) => item.value));
       }}
-      defaultValue={defaultValue}
+      value={optionsFromList}
       isMulti={true}
       isDisabled={remainingProps.readOnly}
       options={selectItems}
@@ -185,11 +190,12 @@ function SelectWidget({ listValues, setValue, value, ...remainingProps }: Select
       value: item.value,
     };
   });
-  const defaultValue = selectItems.find((item) => item.value === value);
+  const optionFromList = selectItems.find((item) => item.value === value);
 
   return (
     <Select
-      className="data-testid-select dark:border-darkgray-300 mb-2 block w-full min-w-0 flex-1 rounded-none rounded-r-sm border-gray-300 dark:bg-transparent dark:text-white dark:selection:bg-green-500 disabled:dark:text-gray-500 sm:text-sm"
+      aria-label="select-dropdown"
+      className="data-testid-select mb-2"
       onChange={(item) => {
         if (!item) {
           return;
@@ -197,7 +203,7 @@ function SelectWidget({ listValues, setValue, value, ...remainingProps }: Select
         setValue(item.value);
       }}
       isDisabled={remainingProps.readOnly}
-      defaultValue={defaultValue}
+      value={optionFromList}
       options={selectItems}
       {...remainingProps}
     />
@@ -208,7 +214,7 @@ function Button({ config, type, label, onClick, readonly }: ButtonProps) {
   if (type === "delRule" || type == "delGroup") {
     return (
       <button className="ml-5">
-        <FiTrash className="m-0 h-4 w-4 text-gray-500" onClick={onClick} />
+        <Icon name="trash" className="text-subtle m-0 h-4 w-4" onClick={onClick} />
       </button>
     );
   }
@@ -222,7 +228,7 @@ function Button({ config, type, label, onClick, readonly }: ButtonProps) {
   }
   return (
     <CalButton
-      StartIcon={FiPlus}
+      StartIcon="plus"
       data-testid={dataTestId}
       type="button"
       color="secondary"

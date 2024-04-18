@@ -1,20 +1,27 @@
-import type { GetServerSidePropsContext } from "next";
+"use client";
+
 import type { ChangeEventHandler } from "react";
 import { useState } from "react";
 
-import { getAppRegistry, getAppRegistryWithCredentials } from "@calcom/app-store/_appRegistry";
-import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
+import Shell from "@calcom/features/shell/Shell";
 import { classNames } from "@calcom/lib";
 import { useLocale } from "@calcom/lib/hooks/useLocale";
-import type { AppCategories } from "@calcom/prisma/client";
 import type { inferSSRProps } from "@calcom/types/inferSSRProps";
 import type { HorizontalTabItemProps } from "@calcom/ui";
-import { AllApps, AppStoreCategories, HorizontalTabs, TextField, PopularAppsSlider } from "@calcom/ui";
-import { FiSearch } from "@calcom/ui/components/icon";
+import {
+  AllApps,
+  AppStoreCategories,
+  HorizontalTabs,
+  TextField,
+  PopularAppsSlider,
+  RecentAppsSlider,
+} from "@calcom/ui";
+import { Icon } from "@calcom/ui";
 
+import { getServerSideProps } from "@lib/apps/getServerSideProps";
+
+import PageWrapper from "@components/PageWrapper";
 import AppsLayout from "@components/apps/layouts/AppsLayout";
-
-import { ssgInit } from "@server/lib/ssg";
 
 const tabs: HorizontalTabItemProps[] = [
   {
@@ -34,20 +41,26 @@ function AppsSearch({
   onChange: ChangeEventHandler<HTMLInputElement>;
   className?: string;
 }) {
+  const { t } = useLocale();
   return (
     <TextField
-      className="!border-gray-100 bg-gray-100 !pl-0 focus:!ring-offset-0"
-      addOnLeading={<FiSearch className="h-4 w-4 text-gray-500" />}
-      addOnClassname="!border-gray-100"
-      containerClassName={classNames("focus:!ring-offset-0", className)}
+      className="bg-subtle !border-muted !pl-0 focus:!ring-offset-0"
+      addOnLeading={<Icon name="search" className="text-subtle h-4 w-4" />}
+      addOnClassname="!border-muted"
+      containerClassName={classNames("focus:!ring-offset-0 m-1", className)}
       type="search"
       autoComplete="false"
       onChange={onChange}
+      placeholder={t("search")}
     />
   );
 }
 
-export default function Apps({ categories, appStore }: inferSSRProps<typeof getServerSideProps>) {
+export default function Apps({
+  categories,
+  appStore,
+  userAdminTeams,
+}: Omit<inferSSRProps<typeof getServerSideProps>, "trpcState">) {
   const { t } = useLocale();
   const [searchText, setSearchText] = useState<string | undefined>(undefined);
 
@@ -73,53 +86,31 @@ export default function Apps({ categories, appStore }: inferSSRProps<typeof getS
           <>
             <AppStoreCategories categories={categories} />
             <PopularAppsSlider items={appStore} />
+            <RecentAppsSlider items={appStore} />
           </>
         )}
         <AllApps
           apps={appStore}
           searchText={searchText}
           categories={categories.map((category) => category.name)}
+          userAdminTeams={userAdminTeams}
         />
       </div>
     </AppsLayout>
   );
 }
 
-export const getServerSideProps = async (context: GetServerSidePropsContext) => {
-  const { req, res } = context;
+export { getServerSideProps };
 
-  const ssg = await ssgInit(context);
-
-  const session = await getServerSession({ req, res });
-
-  let appStore;
-  if (session?.user?.id) {
-    appStore = await getAppRegistryWithCredentials(session.user.id);
-  } else {
-    appStore = await getAppRegistry();
-  }
-
-  const categoryQuery = appStore.map(({ categories }) => ({
-    categories: categories || [],
-  }));
-  const categories = categoryQuery.reduce((c, app) => {
-    for (const category of app.categories) {
-      c[category] = c[category] ? c[category] + 1 : 1;
-    }
-    return c;
-  }, {} as Record<string, number>);
-  return {
-    props: {
-      categories: Object.entries(categories)
-        .map(([name, count]): { name: AppCategories; count: number } => ({
-          name: name as AppCategories,
-          count,
-        }))
-        .sort(function (a, b) {
-          return b.count - a.count;
-        }),
-      appStore,
-      trpcState: ssg.dehydrate(),
-    },
-  };
+Apps.PageWrapper = PageWrapper;
+Apps.getLayout = (page: React.ReactElement) => {
+  return (
+    <Shell
+      title="Apps Store"
+      description="Create forms to direct attendees to the correct destinations."
+      withoutMain={true}
+      hideHeadingOnMobile>
+      {page}
+    </Shell>
+  );
 };
