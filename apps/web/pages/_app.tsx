@@ -10,6 +10,7 @@ import "../styles/globals.css";
 
 function MyApp(props: AppProps) {
   const { Component, pageProps } = props;
+  console.log("Console log to test hashFile changes");
 
   if (Component.PageWrapper !== undefined) return Component.PageWrapper(props);
   return <Component {...pageProps} />;
